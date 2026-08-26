@@ -92,7 +92,6 @@ Copia las variables a un archivo `.env` (no se commitea). En Twilio, el webhook 
 
 | Variable | Para qué |
 |---|---|
-| `PORT` | puerto local (default `3000`) |
 | `TWILIO_ACCOUNT_SID` | cuenta Twilio |
 | `TWILIO_AUTH_TOKEN` | token y validación de webhooks |
 | `TWILIO_PHONE_NUMBER` | Caller ID al marcar al operador |
