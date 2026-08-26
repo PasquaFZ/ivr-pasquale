@@ -1,5 +1,9 @@
-if (!process.env.RAILWAY_ENVIRONMENT) {
-  require("dotenv").config();
+const fs = require("fs");
+const path = require("path");
+
+const envFile = path.join(__dirname, ".env");
+if (fs.existsSync(envFile)) {
+  require("dotenv").config({ path: envFile, quiet: true });
 }
 
 const express = require("express");
