@@ -1,4 +1,6 @@
-require("dotenv").config();
+if (!process.env.RAILWAY_ENVIRONMENT) {
+  require("dotenv").config();
+}
 
 const express = require("express");
 const twiml = require("./lib/twiml");
@@ -133,7 +135,9 @@ app.post("/operator/name", async (req, res) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`listening on ${port}`);
-  if (!process.env.OPERATOR_PHONE) console.warn("OPERATOR_PHONE is empty");
+  const operator = process.env.OPERATOR_PHONE || "";
+  console.log("operator", operator ? `…${operator.slice(-4)}` : "missing");
+  if (!operator) console.warn("OPERATOR_PHONE is empty");
   if (!process.env.PUBLIC_BASE_URL) console.warn("PUBLIC_BASE_URL is empty");
   const company = process.env.COMPANY_PHONE;
   if (company && process.env.OPERATOR_PHONE && process.env.OPERATOR_PHONE === company) {

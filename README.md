@@ -8,9 +8,9 @@ No incluye frontend: solo webhooks TwiML y una API JSON.
 
 1. El cliente marca el celular de la empresa (`COMPANY_PHONE`). Esa línea se desvía al número de Twilio.
 2. Twilio llama a `POST /voice/incoming`. El servidor registra al llamante en DynamoDB (por teléfono) y arranca la grabación.
-3. El IVR saluda *“Pasquale. Good day.”* y ofrece español (`2`).
-4. Avisa que la llamada puede grabarse y conecta con el operador (`OPERATOR_PHONE`).
-5. Antes de que el operador conteste, oye un *whisper* con el número de quien llama.
+3. El IVR habla en inglés y ofrece español (`2`).
+4. Avisa que la llamada puede grabarse (en el idioma del cliente) y conecta con el operador (`OPERATOR_PHONE`).
+5. Antes de que el operador conteste, oye un *whisper* en español con el número de quien llama.
 6. Si nadie atiende, el IVR dice que devolverán la llamada y cuelga.
 7. Al terminar la grabación, descarga el MP3 de Twilio, lo sube a S3 y guarda el registro en DynamoDB.
 
@@ -84,7 +84,11 @@ Content-Type: application/json
 
 ## Configuración
 
-Copia las variables a un archivo `.env` (no se commitea). En Twilio, el webhook de voz del número debe apuntar a:
+En local, copia `.env.example` a `.env` (no se commitea).
+
+En **Railway** el `.env` no se sube. Hay que pegar las mismas variables en **Variables** del servicio. Si cambias `OPERATOR_PHONE` solo en tu Mac, el deploy sigue usando el número viejo.
+
+En Twilio, el webhook de voz del número debe apuntar a:
 
 ```
 {PUBLIC_BASE_URL}/voice/incoming
