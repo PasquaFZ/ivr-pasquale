@@ -23,6 +23,12 @@ function clientPhoneFromDigits(raw) {
   return normalizePhone(`+${digits}`);
 }
 
+function callDirectionFrom(req) {
+  if (req.query.direction === "outbound") return "outbound";
+  if (req.query.direction === "inbound") return "inbound";
+  return null;
+}
+
 function deptFrom(req) {
   const digit = req.body.Digits;
   if (digit === "0") return "admin";
@@ -33,4 +39,4 @@ function deptFrom(req) {
   return null;
 }
 
-module.exports = { langFrom, outboundLangFrom, clientPhoneFromDigits, deptFrom };
+module.exports = { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, deptFrom };

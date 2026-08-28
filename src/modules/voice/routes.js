@@ -2,7 +2,7 @@ const express = require("express");
 const { requireTwilio } = require("../../infra/twilio");
 const { isCompanyCaller, isOwnedNumber, isInternalPhone } = require("../../config");
 const twiml = require("./twiml");
-const { langFrom, outboundLangFrom, clientPhoneFromDigits, deptFrom } = require("./parse");
+const { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, deptFrom } = require("./parse");
 const { registerIncoming, registerOutgoing, saveRecording } = require("./service");
 
 const router = express.Router();
@@ -67,9 +67,21 @@ router.post("/outbound/language", requireTwilio, async (req, res) => {
 
 router.post("/outbound/connect", requireTwilio, async (req, res) => {
   const lang = outboundLangFrom(req) || "en";
+  const tries = Number(req.query.tries) || 0;
+  const digits = String(req.body.Digits || "").replace(/\D/g, "");
   const phone = clientPhoneFromDigits(req.body.Digits);
+
+  if (!digits) {
+    if (tries + 1 >= 2) {
+      xml(res, twiml.noNumberHangup(lang));
+      return;
+    }
+    xml(res, twiml.companyAskNumber(lang, { missing: true, tries: tries + 1 }));
+    return;
+  }
+
   if (!phone || isInternalPhone(phone)) {
-    xml(res, twiml.companyAskNumber(lang, true));
+    xml(res, twiml.companyAskNumber(lang, { invalid: true, tries }));
     return;
   }
 
@@ -96,7 +108,8 @@ router.post("/recording-complete", requireTwilio, async (req, res) => {
   const recordingUrl = req.body.RecordingUrl;
   const duration = Number(req.body.RecordingDuration || 0);
   const clientPhone = clientPhoneFromDigits(req.query.client);
-  console.log("recording-complete", { callSid, duration, clientPhone });
+  const direction = callDirectionFrom(req);
+  console.log("recording-complete", { callSid, duration, clientPhone, direction });
 
   try {
     const out = await saveRecording({
@@ -105,6 +118,7 @@ router.post("/recording-complete", requireTwilio, async (req, res) => {
       status: req.body.RecordingStatus,
       duration,
       clientPhone,
+      direction,
     });
     if (out.s3Key) console.log("saved audio", out.s3Key);
     res.sendStatus(200);

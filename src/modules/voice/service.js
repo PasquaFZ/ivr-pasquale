@@ -11,7 +11,7 @@ async function registerIncoming(from, callSid) {
     console.error("upsert user", err);
   }
 
-  startCallRecording(callSid).catch((err) => {
+  startCallRecording(callSid, "direction=inbound").catch((err) => {
     console.error("start recording", err);
   });
 }
@@ -25,7 +25,7 @@ async function registerOutgoing(clientPhone) {
   }
 }
 
-async function saveRecording({ callSid, recordingUrl, status, duration, clientPhone }) {
+async function saveRecording({ callSid, recordingUrl, status, duration, clientPhone, direction }) {
   if (!recordingUrl || status === "absent") return { skipped: true };
 
   const phone = clientPhone || (await fetchCallFrom(callSid));
@@ -41,13 +41,20 @@ async function saveRecording({ callSid, recordingUrl, status, duration, clientPh
     throw err;
   }
 
+  if (!direction) {
+    const err = new Error("invalid audio direction");
+    err.code = "INVALID_DIRECTION";
+    throw err;
+  }
+
   const mp3 = await downloadTwilioMp3(recordingUrl);
-  const s3Key = await uploadCallAudio(userId, callSid, mp3);
+  const s3Key = await uploadCallAudio(userId, callSid, mp3, direction);
   await putAudioItem({
     userId,
     callSid,
     durationSeconds: duration,
     s3Key,
+    direction,
   });
   return { s3Key };
 }

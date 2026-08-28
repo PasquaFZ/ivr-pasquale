@@ -89,13 +89,14 @@ Empresa/depto → Twilio
 | Usuario | `PK = USER#{id}`, `SK = METADATA` | teléfono, nombre, email, rol, estado |
 | Índice teléfono | GSI1 `PHONE#{número}` | buscar cliente por número |
 | Índice nombre | GSI2 `ENTITY#USER` + apellido#nombre | listar / buscar por nombre |
-| Audio | `SK = AUDIO#{fecha}#{callSid}` | duración, bucket y key de S3 |
+| Audio | `SK = AUDIO#{fecha}#{callSid}` | duración, `Direction` (`inbound` cliente / `outbound` empresa), bucket y key de S3 |
 | Sesión | refresh hasheado | logout / rotación (se revoca con Update, no Delete) |
 
 **S3** (`S3_BUCKET`):
 
 ```
-clients/{userId}/audios/{callSid}.mp3
+clients/{userId}/audios/inbound/{callSid}.mp3
+clients/{userId}/audios/outbound/{callSid}.mp3
 ```
 
 El panel no descarga de S3 a pelo: pide una **URL firmada de CloudFront** (5 minutos).

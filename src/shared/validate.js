@@ -88,6 +88,7 @@ function publicAudio(item) {
     audioId: item.CallSid || item.AudioId,
     callSid: item.CallSid || item.AudioId,
     durationSeconds: item.DurationSeconds || 0,
+    direction: item.Direction,
     uploadedAt: item.UploadedAt || "",
     mimeType: item.MimeType || "audio/mpeg",
   };

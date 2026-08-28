@@ -22,9 +22,14 @@ async function downloadTwilioMp3(recordingUrl) {
   return Buffer.from(res.data);
 }
 
-async function uploadCallAudio(userId, callSid, body) {
+async function uploadCallAudio(userId, callSid, body, direction) {
+  if (direction !== "inbound" && direction !== "outbound") {
+    const err = new Error("invalid audio direction");
+    err.code = "INVALID_DIRECTION";
+    throw err;
+  }
   const bucket = process.env.S3_BUCKET;
-  const key = `clients/${userId}/audios/${callSid}.mp3`;
+  const key = `clients/${userId}/audios/${direction}/${callSid}.mp3`;
   await s3.send(
     new PutObjectCommand({
       Bucket: bucket,

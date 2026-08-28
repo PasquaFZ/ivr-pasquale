@@ -123,12 +123,17 @@ const OUTBOUND_LANG_ES =
 
 const ASK_NUMBER = {
   en: "Enter the client's phone number, then press pound.",
-  es: "Marque el número del cliente y luego numeral.",
+  es: "Mar que el número del cliente y luego numeral.",
 };
 
 const INVALID_NUMBER = {
   en: "That phone number is not valid.",
   es: "Ese número de teléfono no es válido.",
+};
+
+const NO_NUMBER = {
+  en: "We did not receive a number.",
+  es: "No se recibió ningún número.",
 };
 
 const OUTBOUND_HELLO = {
@@ -150,20 +155,31 @@ function companyLanguageMenu() {
   return xml(twiml);
 }
 
-function companyAskNumber(lang, invalid) {
+function companyAskNumber(lang, opts = {}) {
   const twiml = new VoiceResponse();
   const locale = voiceLang(lang);
-  if (invalid) {
+  const tries = Number(opts.tries) || 0;
+  if (opts.missing) {
+    twiml.say({ language: locale }, NO_NUMBER[lang] || NO_NUMBER.en);
+  } else if (opts.invalid) {
     twiml.say({ language: locale }, INVALID_NUMBER[lang] || INVALID_NUMBER.en);
   }
+  const action = `${publicBaseUrl()}/voice/outbound/connect?lang=${lang}&tries=${tries}`;
   const gather = twiml.gather({
     finishOnKey: "#",
     timeout: 12,
-    action: `${publicBaseUrl()}/voice/outbound/connect?lang=${lang}`,
+    action,
     method: "POST",
   });
   gather.say({ language: locale }, ASK_NUMBER[lang] || ASK_NUMBER.en);
-  twiml.redirect({ method: "POST" }, `${publicBaseUrl()}/voice/outbound/connect?lang=${lang}`);
+  twiml.redirect({ method: "POST" }, action);
+  return xml(twiml);
+}
+
+function noNumberHangup(lang) {
+  const twiml = new VoiceResponse();
+  twiml.say({ language: voiceLang(lang) }, NO_NUMBER[lang] || NO_NUMBER.en);
+  twiml.hangup();
   return xml(twiml);
 }
 
@@ -178,7 +194,7 @@ function clientOutboundNotice(lang) {
 function connectClient(lang, clientPhone) {
   const twiml = new VoiceResponse();
   const base = publicBaseUrl();
-  const recQs = new URLSearchParams({ client: clientPhone });
+  const recQs = new URLSearchParams({ client: clientPhone, direction: "outbound" });
   const dial = twiml.dial({
     timeout: 25,
     answerOnBridge: true,
@@ -204,6 +220,7 @@ module.exports = {
   empty,
   companyLanguageMenu,
   companyAskNumber,
+  noNumberHangup,
   clientOutboundNotice,
   connectClient,
 };
