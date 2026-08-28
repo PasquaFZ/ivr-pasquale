@@ -1,5 +1,5 @@
 const twilio = require("twilio");
-const { publicBaseUrl } = require("./config");
+const { publicBaseUrl } = require("../config");
 
 function client() {
   return twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
