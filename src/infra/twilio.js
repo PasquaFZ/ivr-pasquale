@@ -23,8 +23,9 @@ function requireTwilio(req, res, next) {
   next();
 }
 
-function startCallRecording(callSid) {
-  const callback = `${publicBaseUrl()}/voice/recording-complete`;
+function startCallRecording(callSid, extraQuery) {
+  const qs = extraQuery ? `?${extraQuery}` : "";
+  const callback = `${publicBaseUrl()}/voice/recording-complete${qs}`;
   return client()
     .calls(callSid)
     .recordings.create({

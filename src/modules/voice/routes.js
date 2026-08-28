@@ -1,8 +1,9 @@
 const express = require("express");
 const { requireTwilio } = require("../../infra/twilio");
+const { isCompanyCaller, isOwnedNumber, isInternalPhone } = require("../../config");
 const twiml = require("./twiml");
-const { langFrom, deptFrom } = require("./parse");
-const { registerIncoming, saveRecording } = require("./service");
+const { langFrom, outboundLangFrom, clientPhoneFromDigits, deptFrom } = require("./parse");
+const { registerIncoming, registerOutgoing, saveRecording } = require("./service");
 
 const router = express.Router();
 
@@ -12,8 +13,16 @@ function xml(res, body) {
 
 router.post("/incoming", requireTwilio, async (req, res) => {
   const from = req.body.From;
+  const to = req.body.To;
   const callSid = req.body.CallSid;
-  console.log("incoming", { from, callSid, forwardedFrom: req.body.ForwardedFrom });
+  console.log("incoming", { from, to, callSid, forwardedFrom: req.body.ForwardedFrom });
+
+  if (isCompanyCaller(from)) {
+    console.log("outbound from company", { from, to, callSid });
+    xml(res, twiml.companyLanguageMenu());
+    return;
+  }
+
   await registerIncoming(from, callSid);
   xml(res, twiml.greeting());
 });
@@ -36,6 +45,42 @@ router.post("/whisper", requireTwilio, (req, res) => {
   xml(res, twiml.whisper(langFrom(req), deptFrom(req) || "operator"));
 });
 
+router.post("/outbound/language", requireTwilio, async (req, res) => {
+  const lang = outboundLangFrom(req);
+  if (!lang) {
+    xml(res, twiml.companyLanguageMenu());
+    return;
+  }
+
+  const to = req.body.To;
+  if (to && !isOwnedNumber(to) && !isCompanyCaller(to)) {
+    const phone = clientPhoneFromDigits(to);
+    if (phone && !isInternalPhone(phone)) {
+      await registerOutgoing(phone);
+      xml(res, twiml.connectClient(lang, phone));
+      return;
+    }
+  }
+
+  xml(res, twiml.companyAskNumber(lang));
+});
+
+router.post("/outbound/connect", requireTwilio, async (req, res) => {
+  const lang = outboundLangFrom(req) || "en";
+  const phone = clientPhoneFromDigits(req.body.Digits);
+  if (!phone || isInternalPhone(phone)) {
+    xml(res, twiml.companyAskNumber(lang, true));
+    return;
+  }
+
+  await registerOutgoing(phone);
+  xml(res, twiml.connectClient(lang, phone));
+});
+
+router.post("/outbound/client", requireTwilio, (req, res) => {
+  xml(res, twiml.clientOutboundNotice(langFrom(req)));
+});
+
 router.post("/dial-status", requireTwilio, (req, res) => {
   const status = req.body.DialCallStatus;
   console.log("dial-status", status);
@@ -50,7 +95,8 @@ router.post("/recording-complete", requireTwilio, async (req, res) => {
   const callSid = req.body.CallSid;
   const recordingUrl = req.body.RecordingUrl;
   const duration = Number(req.body.RecordingDuration || 0);
-  console.log("recording-complete", { callSid, duration });
+  const clientPhone = clientPhoneFromDigits(req.query.client);
+  console.log("recording-complete", { callSid, duration, clientPhone });
 
   try {
     const out = await saveRecording({
@@ -58,6 +104,7 @@ router.post("/recording-complete", requireTwilio, async (req, res) => {
       recordingUrl,
       status: req.body.RecordingStatus,
       duration,
+      clientPhone,
     });
     if (out.s3Key) console.log("saved audio", out.s3Key);
     res.sendStatus(200);

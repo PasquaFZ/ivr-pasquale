@@ -116,6 +116,84 @@ function empty() {
   return "<Response/>";
 }
 
+const OUTBOUND_LANG_EN =
+  "To speak with the client in English, press one. To speak in Spanish, press two.";
+const OUTBOUND_LANG_ES =
+  "Para comunicarse con el cliente en inglés, marque uno. Para comunicarse en español, marque dos.";
+
+const ASK_NUMBER = {
+  en: "Enter the client's phone number, then press pound.",
+  es: "Marque el número del cliente y luego numeral.",
+};
+
+const INVALID_NUMBER = {
+  en: "That phone number is not valid.",
+  es: "Ese número de teléfono no es válido.",
+};
+
+const OUTBOUND_HELLO = {
+  en: `Hello. This call is from ${COMPANY}.`,
+  es: `Hola. Esta llamada es de parte de ${COMPANY}.`,
+};
+
+function companyLanguageMenu() {
+  const twiml = new VoiceResponse();
+  const gather = twiml.gather({
+    numDigits: 1,
+    timeout: 6,
+    action: `${publicBaseUrl()}/voice/outbound/language`,
+    method: "POST",
+  });
+  gather.say({ language: "en-US" }, OUTBOUND_LANG_EN);
+  gather.say({ language: "es-MX" }, OUTBOUND_LANG_ES);
+  twiml.redirect({ method: "POST" }, `${publicBaseUrl()}/voice/outbound/language`);
+  return xml(twiml);
+}
+
+function companyAskNumber(lang, invalid) {
+  const twiml = new VoiceResponse();
+  const locale = voiceLang(lang);
+  if (invalid) {
+    twiml.say({ language: locale }, INVALID_NUMBER[lang] || INVALID_NUMBER.en);
+  }
+  const gather = twiml.gather({
+    finishOnKey: "#",
+    timeout: 12,
+    action: `${publicBaseUrl()}/voice/outbound/connect?lang=${lang}`,
+    method: "POST",
+  });
+  gather.say({ language: locale }, ASK_NUMBER[lang] || ASK_NUMBER.en);
+  twiml.redirect({ method: "POST" }, `${publicBaseUrl()}/voice/outbound/connect?lang=${lang}`);
+  return xml(twiml);
+}
+
+function clientOutboundNotice(lang) {
+  const twiml = new VoiceResponse();
+  const locale = voiceLang(lang);
+  twiml.say({ language: locale }, OUTBOUND_HELLO[lang] || OUTBOUND_HELLO.en);
+  twiml.say({ language: locale }, NOTICE[lang] || NOTICE.en);
+  return xml(twiml);
+}
+
+function connectClient(lang, clientPhone) {
+  const twiml = new VoiceResponse();
+  const base = publicBaseUrl();
+  const recQs = new URLSearchParams({ client: clientPhone });
+  const dial = twiml.dial({
+    timeout: 25,
+    answerOnBridge: true,
+    record: "record-from-answer-dual",
+    recordingStatusCallback: `${base}/voice/recording-complete?${recQs}`,
+    recordingStatusCallbackEvent: ["completed"],
+    action: `${base}/voice/dial-status?lang=${lang}`,
+    method: "POST",
+    callerId: process.env.TWILIO_PHONE_NUMBER,
+  });
+  const qs = new URLSearchParams({ lang });
+  dial.number({ url: `${base}/voice/outbound/client?${qs}` }, clientPhone);
+  return xml(twiml);
+}
+
 module.exports = {
   greeting,
   afterLanguage,
@@ -124,4 +202,8 @@ module.exports = {
   operatorBusy,
   whisper,
   empty,
+  companyLanguageMenu,
+  companyAskNumber,
+  clientOutboundNotice,
+  connectClient,
 };

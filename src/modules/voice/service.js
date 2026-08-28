@@ -1,4 +1,4 @@
-const { upsertUserByPhone, findUserByPhone } = require("../users/repository");
+const { upsertUserByPhone } = require("../users/repository");
 const { putAudioItem } = require("../audio/repository");
 const { startCallRecording, fetchCallFrom } = require("../../infra/twilio");
 const { downloadTwilioMp3, uploadCallAudio } = require("../../infra/storage");
@@ -16,11 +16,25 @@ async function registerIncoming(from, callSid) {
   });
 }
 
-async function saveRecording({ callSid, recordingUrl, status, duration }) {
+async function registerOutgoing(clientPhone) {
+  try {
+    const userId = await upsertUserByPhone(clientPhone);
+    console.log("outbound user", userId);
+  } catch (err) {
+    console.error("upsert outbound user", err);
+  }
+}
+
+async function saveRecording({ callSid, recordingUrl, status, duration, clientPhone }) {
   if (!recordingUrl || status === "absent") return { skipped: true };
 
-  const phone = await fetchCallFrom(callSid);
-  const userId = await findUserByPhone(phone);
+  const phone = clientPhone || (await fetchCallFrom(callSid));
+  if (!phone) {
+    const err = new Error("no user for phone");
+    err.code = "NO_USER";
+    throw err;
+  }
+  const userId = await upsertUserByPhone(phone);
   if (!userId) {
     const err = new Error("no user for phone");
     err.code = "NO_USER";
@@ -38,4 +52,4 @@ async function saveRecording({ callSid, recordingUrl, status, duration }) {
   return { s3Key };
 }
 
-module.exports = { registerIncoming, saveRecording };
+module.exports = { registerIncoming, registerOutgoing, saveRecording };

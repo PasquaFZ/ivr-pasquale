@@ -1,72 +1,96 @@
-# IVR Pasquale
+# Restoration A R — IVR
 
-Backend de telefonía del proyecto **Pasquale** (`ivr-pasquale`). Recibe llamadas por Twilio, las desvía a un operador y guarda el historial del cliente y la grabación en AWS.
+Sistema de telefonía de **Restoration A R**: el cliente llama, elige idioma y departamento, y la conversación se graba. La empresa o un departamento también puede llamar a un cliente por Twilio (con aviso de grabación). El panel `ivr-admin` lista clientes y audios.
 
-No incluye frontend: solo webhooks TwiML y una API JSON.
+Son **dos proyectos**:
 
-## Qué hace
+| Carpeta | Qué es |
+|---|---|
+| `ivr-pasquale` | Backend (Twilio, Express, DynamoDB, S3, CloudFront, JWT) |
+| `ivr-admin` | Panel admin (Vite + React) |
 
-1. El cliente marca el celular de la empresa (`COMPANY_PHONE`). Esa línea se desvía al número de Twilio.
-2. Twilio llama a `POST /voice/incoming`. El servidor registra al llamante en DynamoDB (por teléfono) y arranca la grabación.
-3. El IVR habla en inglés y ofrece español (`2`). Si no marca, sigue en inglés.
-4. Avisa que la llamada puede grabarse (en el idioma elegido).
-5. Pregunta el departamento: administrativos (`0`), técnico (`1`) u operador (`2`).
-6. Desvía al número de ese departamento en ese idioma (`ES_*` o `EN_*`).
-7. Antes de que el personal conteste, oye un *whisper* con el departamento y el número de quien llama.
-8. Si nadie atiende, el IVR dice que devolverán la llamada y cuelga.
-9. Al terminar la grabación, descarga el MP3 de Twilio, lo sube a S3 y guarda el registro en DynamoDB.
+No hay `package.json` en la raíz. Cada uno se corre por separado.
 
-**Importante:** ningún teléfono de departamento puede ser el mismo que `COMPANY_PHONE`. Si lo es, la llamada vuelve a entrar al IVR en bucle.
+---
 
-## Stack
-
-- Node.js + Express
-- Twilio (voz, TwiML, grabación dual-channel)
-- DynamoDB (clientes y metadatos de audio)
-- S3 (archivos MP3)
-
-La tabla y el bucket se crean a mano en la consola de AWS. Este repo solo se conecta a ellos.
-
-## Estructura
-
-Monolito modular (sin capas de más):
+## Cómo encajan las piezas
 
 ```
-index.js                 arranque (env + listen)
-src/app.js               Express y montaje de rutas
-src/config.js            variables de entorno
-src/infra/               DynamoDB, S3/CloudFront, Twilio, HTTP
-src/shared/              validación y DTOs
-src/modules/voice/       IVR
-src/modules/auth/        login JWT
-src/modules/users/       clientes y admin
-src/modules/audio/       grabaciones
+Cliente ──marca──► COMPANY_PHONE ──desvío──► Twilio ──► ivr-pasquale
+                                                      │
+Empresa / depto ──marca Twilio──► idioma + nº cliente ┤
+                                                      ▼
+                                              DynamoDB + S3
+                                                      ▲
+ivr-admin ──login JWT──► API /admin ──URL firmada──► CloudFront
 ```
 
-Cada módulo tiene rutas, casos de uso (`service`) y persistencia (`repository`). Infra no conoce HTTP.
+- **Entrada:** el cliente marca el celular de la empresa (`COMPANY_PHONE`). Esa línea se desvía al número de Twilio.
+- **Salida:** la empresa o un departamento marca **Twilio**. Si marcan el celular del cliente en directo, Twilio no entra: es una llamada normal y no se graba.
+- **Twilio** pide TwiML a `{PUBLIC_BASE_URL}/voice/incoming` (POST). La URL del webhook tiene que coincidir con `PUBLIC_BASE_URL` o falla la firma.
 
-## Flujo de una llamada
+**Importante:** ningún teléfono de departamento (`ES_*` / `EN_*`) puede ser el mismo que `COMPANY_PHONE`. Si lo es, la llamada vuelve al IVR en bucle.
+
+---
+
+## Llamada de entrada (el cliente llama)
+
+1. Saludo en inglés: Restoration A R. Para español, **marque 2**. Si no marca, sigue en inglés.
+2. Aviso de grabación (calidad, seguridad y mejora del servicio). Permanecer en la línea es el acuse.
+3. Menú de departamento:
+   - **0** administrativo
+   - **1** técnico
+   - **2** operador
+4. Desvío al número de ese departamento en ese idioma (`ES_*` o `EN_*`).
+5. El personal oye un *whisper* **solo con el departamento** (sin el número del cliente).
+6. Si nadie atiende, se dice que devolverán la llamada y se cuelga.
+7. Se graba en dual-channel desde el inicio. El audio se liga al teléfono **del cliente**. Si no existe, se crea.
 
 ```
 Cliente → COMPANY_PHONE → Twilio
-                         → POST /voice/incoming     (usuario + recording)
-                         → POST /voice/language     (aviso de grabación + menú)
-                         → POST /voice/department   (Dial al depto ES_* / EN_*)
-                         → POST /voice/whisper      (departamento + número)
-                         → POST /voice/dial-status
-                         → POST /voice/recording-complete  (S3 + DynamoDB)
+  POST /voice/incoming            usuario + recording
+  POST /voice/language            aviso + menú
+  POST /voice/department          Dial al depto
+  POST /voice/whisper             “Llamada para el departamento de …”
+  POST /voice/dial-status
+  POST /voice/recording-complete  S3 + DynamoDB
 ```
 
-## Datos que guarda
+---
+
+## Llamada de salida (la empresa llama al cliente)
+
+Pueden activarla **`COMPANY_PHONE`** y los teléfonos de departamento (`ES_*` / `EN_*`), **siempre marcando Twilio**.
+
+1. A la empresa se le pregunta el idioma: **1 inglés**, **2 español**.
+2. Marca el número del cliente y **numeral** (`#`). 10 dígitos se toman como EE.UU. (`+1`).
+3. Si el cliente no existe, se crea. Si existe, el audio se le asigna a ese número.
+4. El cliente oye: saludo, que la llamada es de parte de Restoration A R, y el mismo aviso de grabación.
+5. Si permanece en la línea, quedan conectadas ambas partes y se graba la conversación (dual-channel, desde que el cliente ya contestó).
+
+```
+Empresa/depto → Twilio
+  POST /voice/incoming
+  POST /voice/outbound/language   1 = EN, 2 = ES
+  POST /voice/outbound/connect    dígitos del cliente
+  POST /voice/outbound/client     saludo + aviso al cliente
+  POST /voice/dial-status
+  POST /voice/recording-complete?client=+1…   audio ligado al cliente
+```
+
+---
+
+## Qué se guarda
 
 **DynamoDB** (`DDB_TABLE`, por defecto `ivr-business`):
 
 | Item | Claves | Contenido |
 |---|---|---|
-| Usuario | `PK = USER#{id}`, `SK = METADATA` | teléfono, nombre, estado |
+| Usuario | `PK = USER#{id}`, `SK = METADATA` | teléfono, nombre, email, rol, estado |
 | Índice teléfono | GSI1 `PHONE#{número}` | buscar cliente por número |
-| Índice nombre | GSI2 `ENTITY#USER` + apellido#nombre | buscar por nombre |
+| Índice nombre | GSI2 `ENTITY#USER` + apellido#nombre | listar / buscar por nombre |
 | Audio | `SK = AUDIO#{fecha}#{callSid}` | duración, bucket y key de S3 |
+| Sesión | refresh hasheado | logout / rotación (se revoca con Update, no Delete) |
 
 **S3** (`S3_BUCKET`):
 
@@ -74,32 +98,52 @@ Cliente → COMPANY_PHONE → Twilio
 clients/{userId}/audios/{callSid}.mp3
 ```
 
+El panel no descarga de S3 a pelo: pide una **URL firmada de CloudFront** (5 minutos).
+
+El usuario IAM de DynamoDB necesita `GetItem`, `PutItem`, `UpdateItem`, `Query` y `DeleteItem` (este último para cambiar teléfono o email).
+
+---
+
+## Panel admin (`ivr-admin`)
+
+Solo entra quien tiene `role: admin`. Los clientes de teléfono son `role: user` y no pueden loguearse.
+
+- Login con email/password. Access JWT **1 h** (memoria). Refresh **7 días** en cookie httpOnly `rt`, path `/auth`, SameSite Lax (en producción: None + Secure).
+- Lista de usuarios, 50 por página, cursor de DynamoDB. Búsqueda por nombre, teléfono o email.
+- Ficha: editar nombre, teléfono y email; reproducir y descargar audios.
+- Al logout se limpia el contexto.
+
+El admin se crea al arrancar si no existe, con `ADMIN_EMAIL` y `ADMIN_PASSWORD` (≥ 12 caracteres). Si ya existe, no se pisa la contraseña.
+
+---
+
 ## API
 
-Los webhooks de voz validan la firma de Twilio (`X-Twilio-Signature`).
+Los webhooks de voz validan `X-Twilio-Signature`. El admin usa `Authorization: Bearer` y cookie de refresh.
 
 | Método | Ruta | Uso |
 |---|---|---|
 | `GET` | `/health` | liveness |
-| `POST` | `/voice/incoming` | entrada de llamada |
-| `POST` | `/voice/language` | idioma y aviso de grabación |
-| `POST` | `/voice/department` | menú y conexión al departamento |
-| `POST` | `/voice/whisper` | anuncio al operador |
+| `POST` | `/voice/incoming` | entra la llamada (cliente o empresa) |
+| `POST` | `/voice/language` | idioma de entrada + aviso |
+| `POST` | `/voice/department` | menú y Dial al departamento |
+| `POST` | `/voice/whisper` | anuncio al operador (solo departamento) |
+| `POST` | `/voice/outbound/language` | idioma de la llamada saliente |
+| `POST` | `/voice/outbound/connect` | número del cliente y Dial |
+| `POST` | `/voice/outbound/client` | saludo y aviso al cliente |
 | `POST` | `/voice/dial-status` | resultado del Dial |
 | `POST` | `/voice/recording-complete` | guardar grabación |
-| `POST` | `/voice/status` | log de estado de llamada |
-| `POST` | `/operator/name` | actualizar nombre del cliente (JSON + PIN) |
-| `POST` | `/auth/login` | login admin (cookie httpOnly + access JWT 1h) |
-| `POST` | `/auth/refresh` | rota el refresh token (7 días) |
+| `POST` | `/voice/status` | log de estado |
+| `POST` | `/operator/name` | nombre del cliente (JSON + PIN) |
+| `POST` | `/auth/login` | login admin |
+| `POST` | `/auth/refresh` | rota el refresh |
 | `POST` | `/auth/logout` | cierra sesión |
 | `GET` | `/auth/me` | admin actual |
-| `GET` | `/admin/users` | listar/buscar usuarios (cursor DynamoDB, 50) |
-| `GET` | `/admin/users/:id` | detalle de usuario |
-| `PATCH` | `/admin/users/:id` | editar nombre, teléfono, email |
+| `GET` | `/admin/users` | listar / buscar (cursor, 50) |
+| `GET` | `/admin/users/:id` | detalle |
+| `PATCH` | `/admin/users/:id` | nombre, teléfono, email |
 | `GET` | `/admin/users/:id/audios` | grabaciones (cursor, 50) |
-| `GET` | `/admin/users/:id/audios/:sid/url` | URL firmada de CloudFront (play/download) |
-
-Ejemplo para guardar el nombre:
+| `GET` | `/admin/users/:id/audios/:sid/url` | URL firmada CloudFront |
 
 ```http
 POST /operator/name
@@ -113,31 +157,53 @@ Content-Type: application/json
 }
 ```
 
+---
+
+## Estructura del backend
+
+```
+index.js                 arranque (env + listen)
+src/app.js               Express y montaje de rutas
+src/config.js            variables de entorno
+src/infra/               DynamoDB, S3/CloudFront, Twilio, HTTP
+src/shared/              validación y DTOs
+src/modules/voice/       IVR (entrada y salida)
+src/modules/auth/        login JWT
+src/modules/users/       clientes y admin
+src/modules/audio/       grabaciones
+```
+
+Stack: Node.js + Express, Twilio (voz, TwiML, grabación dual-channel), DynamoDB, S3, CloudFront. La tabla y el bucket se crean a mano en AWS.
+
+---
+
 ## Configuración
 
-En local, copia `.env.example` a `.env` (no se commitea).
+Copia `.env.example` a `.env` (no se commitea).
 
-En **Railway** el `.env` no se sube. Hay que pegar las mismas variables en **Variables** del servicio. Si cambias un teléfono de departamento solo en tu Mac, el deploy sigue usando el número viejo.
+En **Railway** hay que pegar las mismas variables en el servicio. Si cambias un teléfono solo en el Mac, el deploy sigue usando el viejo.
 
-En Twilio, el webhook de voz del número debe apuntar a:
+Twilio → Voice webhook del número:
 
 ```
 {PUBLIC_BASE_URL}/voice/incoming
 ```
 
+Método **POST**.
+
 | Variable | Para qué |
 |---|---|
 | `TWILIO_ACCOUNT_SID` | cuenta Twilio |
-| `TWILIO_AUTH_TOKEN` | token y validación de webhooks |
-| `TWILIO_PHONE_NUMBER` | Caller ID al marcar al operador |
+| `TWILIO_AUTH_TOKEN` | token y firma de webhooks |
+| `TWILIO_PHONE_NUMBER` | Caller ID al marcar (operador o cliente) |
 | `PUBLIC_BASE_URL` | URL pública HTTPS de este servidor |
-| `COMPANY_PHONE` | celular que marcan los clientes |
-| `ES_OPERATOR_PHONE` | operador (llamada en español) |
-| `ES_TECHNICAL_PHONE` | técnico (español) |
-| `ES_ADMINISTRATIVE_PHONE` | administrativo (español) |
-| `EN_OPERATOR_PHONE` | operador (llamada en inglés) |
-| `EN_TECHNICAL_PHONE` | técnico (inglés) |
-| `EN_ADMINISTRATIVE_PHONE` | administrativo (inglés) |
+| `COMPANY_PHONE` | celular de la empresa (entrada + puede activar salida) |
+| `ES_OPERATOR_PHONE` | operador, llamada en español |
+| `ES_TECHNICAL_PHONE` | técnico, español |
+| `ES_ADMINISTRATIVE_PHONE` | administrativo, español |
+| `EN_OPERATOR_PHONE` | operador, inglés |
+| `EN_TECHNICAL_PHONE` | técnico, inglés |
+| `EN_ADMINISTRATIVE_PHONE` | administrativo, inglés |
 | `OPERATOR_PIN` | PIN de `POST /operator/name` |
 | `AWS_REGION` | región AWS |
 | `AWS_ACCESS_KEY_ID` | credenciales AWS |
@@ -146,20 +212,39 @@ En Twilio, el webhook de voz del número debe apuntar a:
 | `S3_BUCKET` | bucket de grabaciones |
 | `CLOUDFRONT_DOMAIN` | dominio de la distribución (sin `https://`) |
 | `CLOUDFRONT_KEY_PAIR_ID` | key pair para firmar URLs |
-| `CLOUDFRONT_PRIVATE_KEY` | PEM de la key (usa `\n` en una sola línea) |
-| `JWT_ACCESS_SECRET` | secreto HMAC del access token (≥32 chars) |
-| `JWT_REFRESH_SECRET` | secreto distinto del refresh token (≥32 chars) |
-| `ADMIN_EMAIL` | email del admin (se crea al arrancar si no existe) |
-| `ADMIN_PASSWORD` | password del admin (≥12 chars; no se pisa si ya existe) |
-| `ADMIN_ORIGIN` | origen del panel `ivr-admin` (CORS y cookies) |
+| `CLOUDFRONT_PRIVATE_KEY` | PEM (una línea con `\n`) |
+| `JWT_ACCESS_SECRET` | HMAC access token (≥ 32 chars) |
+| `JWT_REFRESH_SECRET` | HMAC refresh, distinto al access (≥ 32 chars) |
+| `ADMIN_EMAIL` | email del admin (seed al arrancar) |
+| `ADMIN_PASSWORD` | password del admin (≥ 12 chars) |
+| `ADMIN_ORIGIN` | origen del panel (CORS y cookies) |
 
-El usuario IAM de DynamoDB necesita `GetItem`, `PutItem`, `UpdateItem`, `Query` y `DeleteItem` (este último para cambiar teléfono o email).
+Panel (`ivr-admin/.env`):
+
+```
+VITE_API_URL=http://localhost:3000
+```
+
+---
 
 ## Cómo correrlo
 
+Backend:
+
 ```bash
+cd ivr-pasquale
 npm install
 npm start
 ```
 
-`PUBLIC_BASE_URL` tiene que ser alcanzable por Twilio (túnel o deploy). Sin eso no validan las firmas de los webhooks.
+`PUBLIC_BASE_URL` tiene que ser alcanzable por Twilio (túnel o deploy). Sin eso no validan las firmas.
+
+Panel:
+
+```bash
+cd ivr-admin
+npm install
+npm run dev
+```
+
+Abre Vite (por defecto `http://localhost:5173`) e inicia sesión con `ADMIN_EMAIL` / `ADMIN_PASSWORD`.

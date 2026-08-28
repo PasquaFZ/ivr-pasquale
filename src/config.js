@@ -59,6 +59,37 @@ function departmentPhones() {
   );
 }
 
+function normalizeE164(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return `+${digits}`;
+}
+
+function isCompanyCaller(from) {
+  const n = normalizeE164(from);
+  if (!n) return false;
+  if (normalizeE164(process.env.COMPANY_PHONE) === n) return true;
+  return isDepartmentCaller(from);
+}
+
+function isDepartmentCaller(from) {
+  const n = normalizeE164(from);
+  if (!n) return false;
+  return departmentPhones().some((row) => row.phone && normalizeE164(row.phone) === n);
+}
+
+function isOwnedNumber(to) {
+  const n = normalizeE164(to);
+  if (!n) return false;
+  if (normalizeE164(process.env.TWILIO_PHONE_NUMBER) === n) return true;
+  if (normalizeE164(process.env.COMPANY_PHONE) === n) return true;
+  return false;
+}
+
+function isInternalPhone(phone) {
+  return isOwnedNumber(phone) || isDepartmentCaller(phone);
+}
+
 const ACCESS_TTL = "1h";
 const ACCESS_TTL_SEC = 60 * 60;
 const REFRESH_TTL_SEC = 7 * 24 * 60 * 60;
@@ -79,6 +110,10 @@ module.exports = {
   cloudFrontPrivateKey,
   departmentPhone,
   departmentPhones,
+  isCompanyCaller,
+  isDepartmentCaller,
+  isOwnedNumber,
+  isInternalPhone,
   ACCESS_TTL,
   ACCESS_TTL_SEC,
   REFRESH_TTL_SEC,

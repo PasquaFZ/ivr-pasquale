@@ -1,8 +1,26 @@
+const { normalizePhone } = require("../../shared/validate");
+
 function langFrom(req) {
   if (req.query.lang === "es") return "es";
   if (req.query.lang === "en") return "en";
   if (req.body.Digits === "2") return "es";
   return "en";
+}
+
+function outboundLangFrom(req) {
+  if (req.query.lang === "es") return "es";
+  if (req.query.lang === "en") return "en";
+  if (req.body.Digits === "1") return "en";
+  if (req.body.Digits === "2") return "es";
+  return null;
+}
+
+function clientPhoneFromDigits(raw) {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10) return normalizePhone(`+1${digits}`);
+  if (digits.length === 11 && digits.startsWith("1")) return normalizePhone(`+${digits}`);
+  return normalizePhone(`+${digits}`);
 }
 
 function deptFrom(req) {
@@ -15,4 +33,4 @@ function deptFrom(req) {
   return null;
 }
 
-module.exports = { langFrom, deptFrom };
+module.exports = { langFrom, outboundLangFrom, clientPhoneFromDigits, deptFrom };
