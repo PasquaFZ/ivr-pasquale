@@ -119,7 +119,7 @@ function empty() {
 const OUTBOUND_LANG_EN =
   "To speak with the client in English, press one. To speak in Spanish, press two.";
 const OUTBOUND_LANG_ES =
-  "Para comunicarse con el cliente en inglés, marque uno. Para comunicarse en español, marque dos.";
+  "Para comunicarse con el cliente en inglés, mar que uno. Para comunicarse en español, mar que dos.";
 
 const ASK_NUMBER = {
   en: "Enter the client's phone number, then press pound.",
