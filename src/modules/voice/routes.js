@@ -29,13 +29,11 @@ router.post("/department", requireTwilio, (req, res) => {
     xml(res, twiml.departmentMenu(lang));
     return;
   }
-  xml(res, twiml.connectDepartment(lang, dept, req.body.From));
+  xml(res, twiml.connectDepartment(lang, dept));
 });
 
 router.post("/whisper", requireTwilio, (req, res) => {
-  const digits = req.query.phone;
-  const phone = digits ? `+${digits}` : req.body.From;
-  xml(res, twiml.whisper(langFrom(req), deptFrom(req) || "operator", phone));
+  xml(res, twiml.whisper(langFrom(req), deptFrom(req) || "operator"));
 });
 
 router.post("/dial-status", requireTwilio, (req, res) => {
