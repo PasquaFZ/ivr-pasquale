@@ -9,6 +9,8 @@ const {
   encodeCursor,
   publicAudio,
 } = require("../../shared/validate");
+const { requirePermission } = require("../auth/middleware");
+const { PERMISSIONS } = require("../auth/permissions");
 
 const router = express.Router();
 
@@ -16,7 +18,7 @@ function badCursor(res) {
   return res.status(400).json({ error: "Cursor inválido" });
 }
 
-router.get("/users/:userId/audios", async (req, res) => {
+router.get("/users/:userId/audios", requirePermission(PERMISSIONS.USERS_READ), async (req, res) => {
   if (!isUserId(req.params.userId)) return res.status(404).json({ error: "No encontrado" });
   const cursor = decodeCursor(req.query.cursor);
   if (cursor === null) return badCursor(res);
@@ -35,7 +37,12 @@ router.get("/users/:userId/audios", async (req, res) => {
   }
 });
 
-router.get("/users/:userId/audios/:callSid/url", async (req, res) => {
+function requireAudioUrl(req, res, next) {
+  const intent = req.query.intent === "download" ? PERMISSIONS.AUDIOS_DOWNLOAD : PERMISSIONS.AUDIOS_PLAY;
+  return requirePermission(intent)(req, res, next);
+}
+
+router.get("/users/:userId/audios/:callSid/url", requireAudioUrl, async (req, res) => {
   if (!isUserId(req.params.userId) || !isCallSid(req.params.callSid)) {
     return res.status(404).json({ error: "No encontrado" });
   }

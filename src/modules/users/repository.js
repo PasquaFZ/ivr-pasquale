@@ -10,7 +10,7 @@ const { doc } = require("../../infra/db");
 const { tableName, PAGE_SIZE } = require("../../config");
 
 const USER_PROJECTION =
-  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt";
+  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, Permissions";
 const USER_NAMES = { "#R": "Role", "#S": "Status" };
 
 function nameSortKey(lastName, firstName, userId) {
@@ -63,7 +63,7 @@ async function getUserAuthById(userId) {
     new GetCommand({
       TableName: tableName(),
       Key: { PK: `USER#${userId}`, SK: "METADATA" },
-      ProjectionExpression: "UserId, Email, PasswordHash, #R, #S, FirstName, LastName, Phone, CreatedAt",
+      ProjectionExpression: "UserId, Email, PasswordHash, #R, #S, FirstName, LastName, Phone, CreatedAt, Permissions",
       ExpressionAttributeNames: USER_NAMES,
     }),
   );
@@ -163,52 +163,110 @@ async function updateUserName(phone, firstName, lastName) {
   return userId;
 }
 
-async function createAdminUser({ email, passwordHash, firstName, lastName }) {
+async function createUser({ firstName, lastName, email, phone, passwordHash, role, permissions }) {
   const userId = ulid();
   const now = new Date().toISOString();
-  const first = firstName || "Admin";
-  const last = lastName || "Pasquale";
+  const first = firstName.trim();
+  const last = lastName.trim();
+  const roleName = role === "admin" ? "admin" : "user";
+  const perms = Array.isArray(permissions) ? permissions : [];
 
+  const item = {
+    PK: `USER#${userId}`,
+    SK: "METADATA",
+    UserId: userId,
+    Role: roleName,
+    Status: "ACTIVE",
+    FirstName: first,
+    LastName: last,
+    SearchName: searchName(first, last),
+    Permissions: perms,
+    GSI2PK: "ENTITY#USER",
+    GSI2SK: nameSortKey(last, first, userId),
+    CreatedAt: now,
+  };
+  if (email) item.Email = email;
+  if (phone) item.Phone = phone;
+  if (passwordHash) item.PasswordHash = passwordHash;
+
+  const transact = [
+    {
+      Put: {
+        TableName: tableName(),
+        Item: item,
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    },
+  ];
+
+  if (email) {
+    transact.push({
+      Put: {
+        TableName: tableName(),
+        Item: { PK: `EMAIL#${email}`, SK: "UNIQUE", UserId: userId },
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    });
+  }
+
+  if (phone) {
+    transact.push({
+      Put: {
+        TableName: tableName(),
+        Item: {
+          PK: `USER#${userId}`,
+          SK: `INDEX#PHONE#${phone}`,
+          GSI1PK: `PHONE#${phone}`,
+          GSI1SK: `USER#${userId}`,
+        },
+        ConditionExpression: "attribute_not_exists(PK)",
+      },
+    });
+  }
+
+  try {
+    await doc.send(new TransactWriteCommand({ TransactItems: transact }));
+  } catch (err) {
+    if (err.name === "TransactionCanceledException") return { error: "conflict" };
+    throw err;
+  }
+
+  return { user: await getUserById(userId) };
+}
+
+async function createAdminUser({ email, passwordHash, firstName, lastName, permissions }) {
+  return createUser({
+    firstName: firstName || "admin",
+    lastName: lastName || "business",
+    email,
+    passwordHash,
+    role: "admin",
+    permissions: permissions || [],
+  });
+}
+
+async function applyAdminSeedProfile(userId, { firstName, lastName, permissions }) {
+  const first = firstName || "admin";
+  const last = lastName || "business";
   await doc.send(
-    new TransactWriteCommand({
-      TransactItems: [
-        {
-          Put: {
-            TableName: tableName(),
-            Item: {
-              PK: `USER#${userId}`,
-              SK: "METADATA",
-              UserId: userId,
-              Email: email,
-              PasswordHash: passwordHash,
-              Role: "admin",
-              Status: "ACTIVE",
-              FirstName: first,
-              LastName: last,
-              SearchName: searchName(first, last),
-              GSI2PK: "ENTITY#USER",
-              GSI2SK: nameSortKey(last, first, userId),
-              CreatedAt: now,
-            },
-            ConditionExpression: "attribute_not_exists(PK)",
-          },
-        },
-        {
-          Put: {
-            TableName: tableName(),
-            Item: {
-              PK: `EMAIL#${email}`,
-              SK: "UNIQUE",
-              UserId: userId,
-            },
-            ConditionExpression: "attribute_not_exists(PK)",
-          },
-        },
-      ],
+    new UpdateCommand({
+      TableName: tableName(),
+      Key: { PK: `USER#${userId}`, SK: "METADATA" },
+      UpdateExpression:
+        "SET FirstName = :f, LastName = :l, SearchName = :sn, GSI2PK = :gpk, GSI2SK = :gsk, #R = :role, #S = :status, Permissions = :perms",
+      ExpressionAttributeNames: { "#R": "Role", "#S": "Status" },
+      ExpressionAttributeValues: {
+        ":f": first,
+        ":l": last,
+        ":sn": searchName(first, last),
+        ":gpk": "ENTITY#USER",
+        ":gsk": nameSortKey(last, first, userId),
+        ":role": "admin",
+        ":status": "ACTIVE",
+        ":perms": permissions || [],
+      },
     }),
   );
-
-  return userId;
 }
 
 async function hydrateUsers(items) {
@@ -361,6 +419,8 @@ module.exports = {
   upsertUserByPhone,
   updateUserName,
   createAdminUser,
+  applyAdminSeedProfile,
+  createUser,
   listUsers,
   updateUserProfile,
 };

@@ -1,6 +1,7 @@
 const { hashPassword } = require("./tokens");
-const { findUserByEmail, createAdminUser } = require("../users/repository");
+const { findUserByEmail, createAdminUser, applyAdminSeedProfile } = require("../users/repository");
 const { normalizeEmail, isEmail } = require("../../shared/validate");
+const { ALL } = require("./permissions");
 
 async function seedAdmin() {
   const email = normalizeEmail(process.env.ADMIN_EMAIL);
@@ -21,12 +22,27 @@ async function seedAdmin() {
 
   const existing = await findUserByEmail(email);
   if (existing) {
-    console.log("admin user already exists");
+    await applyAdminSeedProfile(existing, {
+      firstName: "admin",
+      lastName: "business",
+      permissions: ALL,
+    });
+    console.log("admin user already exists — profile synced");
     return;
   }
 
   const passwordHash = await hashPassword(password);
-  await createAdminUser({ email, passwordHash });
+  const out = await createAdminUser({
+    email,
+    passwordHash,
+    firstName: "admin",
+    lastName: "business",
+    permissions: ALL,
+  });
+  if (out.error) {
+    console.error("admin seed failed", out.error);
+    return;
+  }
   console.log("admin user seeded");
 }
 

@@ -13,6 +13,7 @@ const {
   clearRefreshCookie,
 } = require("./tokens");
 const { publicUser } = require("../../shared/validate");
+const { permissionsForUser } = require("./permissions");
 
 function canLogin(user) {
   return user && user.Role === "admin" && user.Status === "ACTIVE" && user.PasswordHash;
@@ -20,14 +21,16 @@ function canLogin(user) {
 
 async function startSession(res, user) {
   const jti = newJti();
+  const permissions = permissionsForUser(user);
   const refresh = signRefreshToken(user.UserId, jti);
-  const accessToken = signAccessToken(user);
+  const accessToken = signAccessToken(user, permissions);
   await putSession(user.UserId, jti, hashToken(refresh));
   setRefreshCookie(res, refresh);
   return {
     accessToken,
     expiresIn: ACCESS_TTL_SEC,
     user: publicUser(user),
+    permissions,
   };
 }
 
@@ -84,7 +87,7 @@ async function logout(token, res) {
 async function me(userId) {
   const user = await getUserAuthById(userId);
   if (!canLogin(user)) return { error: "unauthorized" };
-  return { user: publicUser(user) };
+  return { user: publicUser(user), permissions: permissionsForUser(user) };
 }
 
 module.exports = { login, refresh, logout, me, REFRESH_COOKIE };

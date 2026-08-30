@@ -1,5 +1,6 @@
 const { adminOrigin, isProd } = require("../../config");
 const { bearerToken, verifyAccessToken } = require("./tokens");
+const { hasPermission } = require("./permissions");
 
 function requireAdminOrigin(req, res, next) {
   const origin = req.get("origin");
@@ -30,4 +31,16 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAdminOrigin, requireAuth, requireAdmin };
+function requirePermission(permission) {
+  return (req, res, next) => {
+    if (!req.auth || req.auth.role !== "admin") {
+      return res.status(403).json({ error: "Sin permisos" });
+    }
+    if (!hasPermission(req.auth.role, permission, req.auth.permissions)) {
+      return res.status(403).json({ error: "Sin permisos" });
+    }
+    next();
+  };
+}
+
+module.exports = { requireAdminOrigin, requireAuth, requireAdmin, requirePermission };

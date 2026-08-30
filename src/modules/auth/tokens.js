@@ -36,9 +36,14 @@ async function verifyPassword(password, passwordHash) {
   return bcrypt.compare(password, passwordHash);
 }
 
-function signAccessToken(user) {
+function signAccessToken(user, permissions) {
   return jwt.sign(
-    { sub: user.UserId, role: user.Role, typ: "access" },
+    {
+      sub: user.UserId,
+      role: user.Role,
+      typ: "access",
+      permissions: Array.isArray(permissions) ? permissions : [],
+    },
     accessSecret(),
     { algorithm: "HS256", expiresIn: ACCESS_TTL },
   );

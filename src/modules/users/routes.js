@@ -6,17 +6,22 @@ const {
   findUserByPhone,
   updateUserProfile,
   updateUserName,
+  createUser,
 } = require("./repository");
+const { hashPassword } = require("../auth/tokens");
 const {
   classifySearch,
   isEmail,
   isName,
   isUserId,
+  normalizeEmail,
   normalizePhone,
   decodeCursor,
   encodeCursor,
   publicUser,
 } = require("../../shared/validate");
+const { requirePermission } = require("../auth/middleware");
+const { PERMISSIONS, ALL, sanitizePermissions } = require("../auth/permissions");
 
 const router = express.Router();
 
@@ -24,7 +29,67 @@ function badCursor(res) {
   return res.status(400).json({ error: "Cursor inválido" });
 }
 
-router.get("/users", async (req, res) => {
+router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, res) => {
+  const body = req.body || {};
+  const firstName = String(body.firstName || "").trim();
+  const lastName = String(body.lastName || "").trim();
+  const role = body.role === "admin" ? "admin" : "user";
+  const email = normalizeEmail(body.email);
+  const password = String(body.password || "");
+  const rawPhone = String(body.phone || "").trim();
+
+  if (!isName(firstName)) return res.status(400).json({ error: "Nombre inválido" });
+  if (!isName(lastName)) return res.status(400).json({ error: "Apellido inválido" });
+
+  let phone = "";
+  if (rawPhone) {
+    phone = normalizePhone(rawPhone);
+    if (!phone) return res.status(400).json({ error: "Teléfono inválido" });
+  }
+
+  if (role === "admin") {
+    if (!email || !isEmail(email)) return res.status(400).json({ error: "El admin necesita un email" });
+    if (password.length < 12 || password.length > 200) {
+      return res.status(400).json({ error: "La contraseña debe tener al menos 12 caracteres" });
+    }
+  } else if (email && !isEmail(email)) {
+    return res.status(400).json({ error: "Email inválido" });
+  }
+
+  if (!email && !phone) {
+    return res.status(400).json({ error: "Indica un email o un teléfono" });
+  }
+
+  const requested = sanitizePermissions(body.permissions);
+  const permissions = role === "admin" ? (requested && requested.length ? requested : ALL) : [];
+
+  try {
+    if (email && (await findUserByEmail(email))) {
+      return res.status(409).json({ error: "Ese email ya existe" });
+    }
+    if (phone && (await findUserByPhone(phone))) {
+      return res.status(409).json({ error: "Ese teléfono ya existe" });
+    }
+
+    const passwordHash = role === "admin" ? await hashPassword(password) : undefined;
+    const out = await createUser({
+      firstName,
+      lastName,
+      email: email || undefined,
+      phone: phone || undefined,
+      passwordHash,
+      role,
+      permissions,
+    });
+    if (out.error === "conflict") return res.status(409).json({ error: "Conflicto al guardar" });
+    res.status(201).json(publicUser(out.user));
+  } catch (err) {
+    console.error("create user", err);
+    res.status(500).json({ error: "Error al crear el usuario" });
+  }
+});
+
+router.get("/users", requirePermission(PERMISSIONS.USERS_LIST), async (req, res) => {
   const cursor = decodeCursor(req.query.cursor);
   if (cursor === null) return badCursor(res);
 
@@ -62,7 +127,7 @@ router.get("/users", async (req, res) => {
   }
 });
 
-router.get("/users/:userId", async (req, res) => {
+router.get("/users/:userId", requirePermission(PERMISSIONS.USERS_READ), async (req, res) => {
   if (!isUserId(req.params.userId)) return res.status(404).json({ error: "No encontrado" });
   try {
     const user = await getUserById(req.params.userId);
@@ -74,7 +139,7 @@ router.get("/users/:userId", async (req, res) => {
   }
 });
 
-router.patch("/users/:userId", async (req, res) => {
+router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), async (req, res) => {
   if (!isUserId(req.params.userId)) return res.status(404).json({ error: "No encontrado" });
 
   const body = req.body || {};

@@ -80,6 +80,7 @@ function publicUser(item) {
     role: item.Role || "user",
     status: item.Status || "ACTIVE",
     createdAt: item.CreatedAt || "",
+    permissions: Array.isArray(item.Permissions) ? item.Permissions : [],
   };
 }
 
