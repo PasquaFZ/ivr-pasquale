@@ -10,8 +10,8 @@ const { doc } = require("../../infra/db");
 const { tableName, PAGE_SIZE } = require("../../config");
 
 const USER_PROJECTION =
-  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, Permissions";
-const USER_NAMES = { "#R": "Role", "#S": "Status" };
+  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms";
+const USER_NAMES = { "#R": "Role", "#S": "Status", "#Perms": "Permissions" };
 
 function nameSortKey(lastName, firstName, userId) {
   return `${lastName.toLowerCase()}#${firstName.toLowerCase()}#${userId}`;
@@ -63,7 +63,7 @@ async function getUserAuthById(userId) {
     new GetCommand({
       TableName: tableName(),
       Key: { PK: `USER#${userId}`, SK: "METADATA" },
-      ProjectionExpression: "UserId, Email, PasswordHash, #R, #S, FirstName, LastName, Phone, CreatedAt, Permissions",
+      ProjectionExpression: "UserId, Email, PasswordHash, #R, #S, FirstName, LastName, Phone, CreatedAt, #Perms",
       ExpressionAttributeNames: USER_NAMES,
     }),
   );
@@ -253,8 +253,8 @@ async function applyAdminSeedProfile(userId, { firstName, lastName, permissions 
       TableName: tableName(),
       Key: { PK: `USER#${userId}`, SK: "METADATA" },
       UpdateExpression:
-        "SET FirstName = :f, LastName = :l, SearchName = :sn, GSI2PK = :gpk, GSI2SK = :gsk, #R = :role, #S = :status, Permissions = :perms",
-      ExpressionAttributeNames: { "#R": "Role", "#S": "Status" },
+        "SET FirstName = :f, LastName = :l, SearchName = :sn, GSI2PK = :gpk, GSI2SK = :gsk, #R = :role, #S = :status, #Perms = :perms",
+      ExpressionAttributeNames: { "#R": "Role", "#S": "Status", "#Perms": "Permissions" },
       ExpressionAttributeValues: {
         ":f": first,
         ":l": last,
