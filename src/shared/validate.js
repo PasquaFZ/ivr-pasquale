@@ -115,6 +115,69 @@ function publicAudio(item) {
   };
 }
 
+function itemSnapshot(item) {
+  if (!item) return null;
+  const status = String(item.Status || "ACTIVE").toUpperCase();
+  return {
+    firstName: item.FirstName || "",
+    lastName: item.LastName || "",
+    phone: item.Phone || "",
+    email: item.Email || "",
+    role: item.Role || "user",
+    status: status === "INACTIVE" || status === "DISABLED" ? "inactive" : "active",
+    permissions: Array.isArray(item.Permissions) ? [...item.Permissions] : [],
+  };
+}
+
+function snapshotFromPublic(user) {
+  if (!user) return null;
+  return {
+    firstName: user.firstName || "",
+    lastName: user.lastName || "",
+    phone: user.phone || "",
+    email: user.email || "",
+    role: user.role || "user",
+    status: user.status || "active",
+    permissions: Array.isArray(user.permissions) ? [...user.permissions] : [],
+  };
+}
+
+function samePerms(a, b) {
+  return [...(a || [])].sort().join("\0") === [...(b || [])].sort().join("\0");
+}
+
+function diffSnapshots(before, after, extras = []) {
+  const changes = [];
+  if (before && after) {
+    for (const field of ["firstName", "lastName", "phone", "email", "role", "status"]) {
+      const from = before[field] ?? "";
+      const to = after[field] ?? "";
+      if (from !== to) changes.push({ field, from, to });
+    }
+    if (!samePerms(before.permissions, after.permissions)) {
+      changes.push({ field: "permissions", from: before.permissions || [], to: after.permissions || [] });
+    }
+  }
+  return changes.concat(extras);
+}
+
+function personFromPublic(user) {
+  if (!user) return { userId: "", name: "", email: "", role: "", phone: "" };
+  return {
+    userId: user.userId || "",
+    name: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+    email: user.email || "",
+    role: user.role || "",
+    phone: user.phone || "",
+  };
+}
+
+function clientIp(req) {
+  const fwd = req && req.get && req.get("x-forwarded-for");
+  if (fwd) return String(fwd).split(",")[0].trim();
+  return (req && req.ip) || "";
+}
+
 module.exports = {
   normalizeEmail,
   isEmail,
@@ -130,4 +193,9 @@ module.exports = {
   publicStatus,
   publicUser,
   publicAudio,
+  itemSnapshot,
+  snapshotFromPublic,
+  diffSnapshots,
+  personFromPublic,
+  clientIp,
 };

@@ -80,12 +80,14 @@ async function refresh(token, res) {
 
 async function logout(token, res) {
   clearRefreshCookie(res);
-  if (!token) return;
+  if (!token) return { user: null };
   try {
     const payload = verifyRefreshToken(token);
     await revokeSession(payload.sub, payload.jti);
+    const user = await getUserAuthById(payload.sub);
+    return { user: publicUser(user) };
   } catch {
-    // cookie already invalid
+    return { user: null };
   }
 }
 

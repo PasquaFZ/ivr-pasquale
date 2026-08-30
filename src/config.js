@@ -6,6 +6,10 @@ function tableName() {
   return process.env.DDB_TABLE || "ivr-business";
 }
 
+function logTableName() {
+  return process.env.DDB_LOG_TABLE || "ivr-log";
+}
+
 function isProd() {
   return process.env.NODE_ENV === "production";
 }
@@ -100,6 +104,7 @@ const REFRESH_COOKIE = "rt";
 module.exports = {
   publicBaseUrl,
   tableName,
+  logTableName,
   isProd,
   adminOrigin,
   accessSecret,

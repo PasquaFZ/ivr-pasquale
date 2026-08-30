@@ -21,8 +21,11 @@ const {
   parseRole,
   parseStatus,
   publicUser,
+  personFromPublic,
+  snapshotFromPublic,
 } = require("../../shared/validate");
 const { requirePermission } = require("../auth/middleware");
+const { writeRequestAudit } = require("../logs/audit");
 const { PERMISSIONS, ALL, sanitizePermissions, permissionsForRole, isPanelRole } = require("../auth/permissions");
 const { revokeAllSessions } = require("../auth/sessions");
 
@@ -92,7 +95,20 @@ router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, r
       permissions,
     });
     if (out.error === "conflict") return res.status(409).json({ error: "Conflicto al guardar" });
-    res.status(201).json(publicUser(out.user));
+    const created = publicUser(out.user);
+    const snap = snapshotFromPublic(created);
+    const extras = passwordHash ? [{ field: "password", from: null, to: "(definida)" }] : [];
+    const changes = Object.keys(snap)
+      .filter((field) => field !== "permissions" || (snap.permissions && snap.permissions.length))
+      .map((field) => ({ field, from: null, to: snap[field] }))
+      .concat(extras);
+    await writeRequestAudit(req, {
+      action: "CREATE",
+      resource: "user",
+      target: personFromPublic(created),
+      changes,
+    });
+    res.status(201).json(created);
   } catch (err) {
     console.error("create user", err);
     res.status(500).json({ error: "Error al crear el usuario" });
@@ -249,7 +265,16 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
     if (out.revokeSessions) {
       await revokeAllSessions(req.params.userId);
     }
-    res.json(publicUser(out.user));
+    const updated = publicUser(out.user);
+    if (out.changes && out.changes.length) {
+      await writeRequestAudit(req, {
+        action: "UPDATE",
+        resource: "user",
+        target: personFromPublic(updated),
+        changes: out.changes,
+      });
+    }
+    res.json(updated);
   } catch (err) {
     console.error("update user", err);
     res.status(500).json({ error: "Error al guardar" });

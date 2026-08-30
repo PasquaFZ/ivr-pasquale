@@ -8,9 +8,12 @@ const {
   decodeCursor,
   encodeCursor,
   publicAudio,
+  publicUser,
+  personFromPublic,
 } = require("../../shared/validate");
 const { requirePermission } = require("../auth/middleware");
 const { PERMISSIONS } = require("../auth/permissions");
+const { writeRequestAudit } = require("../logs/audit");
 
 const router = express.Router();
 
@@ -50,6 +53,15 @@ router.get("/users/:userId/audios/:callSid/url", requireAudioUrl, async (req, re
   try {
     const audio = await findAudio(req.params.userId, req.params.callSid);
     if (!audio || !audio.S3Key) return res.status(404).json({ error: "No encontrado" });
+    const intent = req.query.intent === "download" ? "download" : "play";
+    const targetUser = publicUser(await getUserById(req.params.userId));
+    await writeRequestAudit(req, {
+      action: intent === "download" ? "DOWNLOAD" : "PLAY",
+      resource: "audio",
+      target: personFromPublic(targetUser),
+      callSid: req.params.callSid,
+      changes: [{ field: "callSid", from: null, to: req.params.callSid }],
+    });
     res.json(audioUrl({ key: audio.S3Key }));
   } catch (err) {
     if (err.code === "CLOUDFRONT_NOT_CONFIGURED") {

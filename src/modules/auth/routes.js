@@ -2,7 +2,8 @@ const express = require("express");
 const { login, refresh, logout, me, REFRESH_COOKIE } = require("./service");
 const { requireAdminOrigin, requireAuth, requireAdmin } = require("./middleware");
 const { loginLimiter } = require("./rate-limit");
-const { normalizeEmail, isEmail } = require("../../shared/validate");
+const { normalizeEmail, isEmail, personFromPublic, clientIp } = require("../../shared/validate");
+const { writeAudit } = require("../logs/audit");
 
 const router = express.Router();
 
@@ -17,6 +18,13 @@ router.post("/login", requireAdminOrigin, loginLimiter, async (req, res) => {
   try {
     const out = await login(email, password, res);
     if (out.error) return res.status(401).json({ error: "Credenciales inválidas" });
+    await writeAudit({
+      action: "LOGIN",
+      resource: "session",
+      actor: personFromPublic(out.user),
+      target: personFromPublic(out.user),
+      ip: clientIp(req),
+    });
     res.json(out);
   } catch (err) {
     console.error("login", err);
@@ -47,7 +55,17 @@ router.get("/me", requireAuth, requireAdmin, async (req, res) => {
 });
 
 router.post("/logout", requireAdminOrigin, async (req, res) => {
-  await logout(req.cookies && req.cookies[REFRESH_COOKIE], res);
+  const out = await logout(req.cookies && req.cookies[REFRESH_COOKIE], res);
+  if (out && out.user) {
+    const person = personFromPublic(out.user);
+    await writeAudit({
+      action: "LOGOUT",
+      resource: "session",
+      actor: person,
+      target: person,
+      ip: clientIp(req),
+    });
+  }
   res.status(204).end();
 });
 

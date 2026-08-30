@@ -31,6 +31,13 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+function requireOwnerAdmin(req, res, next) {
+  if (!req.auth || req.auth.role !== "admin") {
+    return res.status(403).json({ error: "Sin permisos" });
+  }
+  next();
+}
+
 function requirePermission(permission) {
   return (req, res, next) => {
     if (!req.auth || !isPanelRole(req.auth.role)) {
@@ -43,4 +50,4 @@ function requirePermission(permission) {
   };
 }
 
-module.exports = { requireAdminOrigin, requireAuth, requireAdmin, requirePermission };
+module.exports = { requireAdminOrigin, requireAuth, requireAdmin, requireOwnerAdmin, requirePermission };

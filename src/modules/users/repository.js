@@ -8,6 +8,7 @@ const {
 const { ulid } = require("ulid");
 const { doc } = require("../../infra/db");
 const { tableName, PAGE_SIZE } = require("../../config");
+const { itemSnapshot, diffSnapshots } = require("../../shared/validate");
 
 const USER_PROJECTION =
   "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash";
@@ -453,7 +454,11 @@ async function updateUserProfile(userId, patch) {
   const becameInactive = String(nextStatus).toUpperCase() === "INACTIVE" && prevStatus !== "INACTIVE";
   const lostPanel = prevPanel && !nextPanel;
 
-  return { user: await getUserById(userId), revokeSessions: becameInactive || lostPanel };
+  const afterUser = await getUserById(userId);
+  const extras = patch.passwordHash ? [{ field: "password", from: "(oculto)", to: "(actualizada)" }] : [];
+  const changes = diffSnapshots(itemSnapshot(user), itemSnapshot(afterUser), extras);
+
+  return { user: afterUser, revokeSessions: becameInactive || lostPanel, changes };
 }
 
 module.exports = {

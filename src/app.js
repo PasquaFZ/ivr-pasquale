@@ -7,6 +7,7 @@ const voiceRoutes = require("./modules/voice/routes");
 const authRoutes = require("./modules/auth/routes");
 const { router: userRoutes, operatorRouter } = require("./modules/users/routes");
 const audioRoutes = require("./modules/audio/routes");
+const logRoutes = require("./modules/logs/routes");
 
 function createApp() {
   const app = express();
@@ -26,6 +27,7 @@ function createApp() {
     admin.use(requireAuth, requireAdmin);
     admin.use(userRoutes);
     admin.use(audioRoutes);
+    admin.use(logRoutes);
     app.use("/auth", authRoutes);
     app.use("/admin", admin);
     seedAdmin().catch((err) => console.error("seed admin", err));

@@ -92,6 +92,12 @@ Empresa/depto → Twilio
 | Audio | `SK = AUDIO#{fecha}#{callSid}` | duración, `Direction` (`inbound` cliente / `outbound` empresa), bucket y key de S3 |
 | Sesión | refresh hasheado | logout / rotación (se revoca con Update, no Delete) |
 
+**DynamoDB logs** (`DDB_LOG_TABLE`, por defecto `ivr-log`): tabla aparte.
+
+| Item | Claves | Contenido |
+|---|---|---|
+| Log | `PK = ENTITY#LOG`, `SK = {ISO}#{logId}` | acción (`LOGIN`, `LOGOUT`, `CREATE`, `UPDATE`, `PLAY`, `DOWNLOAD`), actor, objetivo, cambios old → new |
+
 **S3** (`S3_BUCKET`):
 
 ```
@@ -101,7 +107,7 @@ clients/{userId}/audios/outbound/{callSid}.mp3
 
 El panel no descarga de S3 a pelo: pide una **URL firmada de CloudFront** (5 minutos).
 
-El usuario IAM de DynamoDB necesita `GetItem`, `PutItem`, `UpdateItem`, `Query` y `DeleteItem` (este último para cambiar teléfono o email).
+El usuario IAM de DynamoDB necesita `GetItem`, `PutItem`, `UpdateItem`, `Query` y `DeleteItem` en `ivr-business` (DeleteItem para cambiar teléfono o email). En `ivr-log` necesita `PutItem` y `Query`.
 
 ---
 
@@ -113,6 +119,7 @@ Entran `admin` y `operator` con status `active`. Los clientes de teléfono son `
 - Lista de usuarios, 50 por página, cursor de DynamoDB. Búsqueda por nombre, teléfono o email.
 - Ficha: editar nombre, teléfono (solo admin), email, rol, permisos y estado; reproducir y descargar audios.
 - Al desactivar o bajar de rol de panel se revocan las sesiones.
+- Auditoría (solo admin): login, logout, altas, cambios de usuario (valor anterior y nuevo), play y download de audios.
 - Al logout se limpia el contexto.
 
 El admin se crea al arrancar si no existe, con `ADMIN_EMAIL` y `ADMIN_PASSWORD` (≥ 12 caracteres). Si ya existe, no se pisa la contraseña.
@@ -147,6 +154,7 @@ Los webhooks de voz validan `X-Twilio-Signature`. El admin usa `Authorization: B
 | `PATCH` | `/admin/users/:id` | perfil, rol, permisos, estado, contraseña |
 | `GET` | `/admin/users/:id/audios` | grabaciones (cursor, 50) |
 | `GET` | `/admin/users/:id/audios/:sid/url` | URL firmada CloudFront |
+| `GET` | `/admin/logs` | auditoría (solo admin, cursor, 50) |
 
 ```http
 POST /operator/name
@@ -211,7 +219,8 @@ Método **POST**.
 | `AWS_REGION` | región AWS |
 | `AWS_ACCESS_KEY_ID` | credenciales AWS |
 | `AWS_SECRET_ACCESS_KEY` | credenciales AWS |
-| `DDB_TABLE` | tabla DynamoDB |
+| `DDB_TABLE` | tabla DynamoDB de usuarios y audios |
+| `DDB_LOG_TABLE` | tabla DynamoDB de auditoría (`ivr-log`) |
 | `S3_BUCKET` | bucket de grabaciones |
 | `CLOUDFRONT_DOMAIN` | dominio de la distribución (sin `https://`) |
 | `CLOUDFRONT_KEY_PAIR_ID` | key pair para firmar URLs |
