@@ -13,10 +13,15 @@ const {
   clearRefreshCookie,
 } = require("./tokens");
 const { publicUser } = require("../../shared/validate");
-const { permissionsForUser } = require("./permissions");
+const { permissionsForUser, isPanelRole } = require("./permissions");
+
+function isActiveStatus(status) {
+  const s = String(status || "ACTIVE").toUpperCase();
+  return s !== "INACTIVE" && s !== "DISABLED";
+}
 
 function canLogin(user) {
-  return user && user.Role === "admin" && user.Status === "ACTIVE" && user.PasswordHash;
+  return user && isPanelRole(user.Role) && isActiveStatus(user.Status) && user.PasswordHash;
 }
 
 async function startSession(res, user) {

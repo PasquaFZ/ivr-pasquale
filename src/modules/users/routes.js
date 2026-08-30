@@ -18,10 +18,13 @@ const {
   normalizePhone,
   decodeCursor,
   encodeCursor,
+  parseRole,
+  parseStatus,
   publicUser,
 } = require("../../shared/validate");
 const { requirePermission } = require("../auth/middleware");
-const { PERMISSIONS, ALL, sanitizePermissions } = require("../auth/permissions");
+const { PERMISSIONS, ALL, sanitizePermissions, permissionsForRole, isPanelRole } = require("../auth/permissions");
+const { revokeAllSessions } = require("../auth/sessions");
 
 const router = express.Router();
 
@@ -33,10 +36,11 @@ router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, r
   const body = req.body || {};
   const firstName = String(body.firstName || "").trim();
   const lastName = String(body.lastName || "").trim();
-  const role = body.role === "admin" ? "admin" : "user";
+  const role = parseRole(body.role) || "user";
   const email = normalizeEmail(body.email);
   const password = String(body.password || "");
   const rawPhone = String(body.phone || "").trim();
+  const panel = isPanelRole(role);
 
   if (!isName(firstName)) return res.status(400).json({ error: "Nombre inválido" });
   if (!isName(lastName)) return res.status(400).json({ error: "Apellido inválido" });
@@ -47,8 +51,8 @@ router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, r
     if (!phone) return res.status(400).json({ error: "Teléfono inválido" });
   }
 
-  if (role === "admin") {
-    if (!email || !isEmail(email)) return res.status(400).json({ error: "El admin necesita un email" });
+  if (panel) {
+    if (!email || !isEmail(email)) return res.status(400).json({ error: "La cuenta de panel necesita un email" });
     if (password.length < 12 || password.length > 200) {
       return res.status(400).json({ error: "La contraseña debe tener al menos 12 caracteres" });
     }
@@ -61,7 +65,12 @@ router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, r
   }
 
   const requested = sanitizePermissions(body.permissions);
-  const permissions = role === "admin" ? (requested && requested.length ? requested : ALL) : [];
+  let permissions = [];
+  if (role === "admin") {
+    permissions = requested && requested.length ? requested : ALL;
+  } else if (role === "operator") {
+    permissions = requested && requested.length ? requested : permissionsForRole("operator");
+  }
 
   try {
     if (email && (await findUserByEmail(email))) {
@@ -71,7 +80,7 @@ router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, r
       return res.status(409).json({ error: "Ese teléfono ya existe" });
     }
 
-    const passwordHash = role === "admin" ? await hashPassword(password) : undefined;
+    const passwordHash = panel ? await hashPassword(password) : undefined;
     const out = await createUser({
       firstName,
       lastName,
@@ -144,6 +153,8 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
 
   const body = req.body || {};
   const patch = {};
+  const actorAdmin = req.auth.role === "admin";
+  const isSelf = req.auth.sub === req.params.userId;
 
   if (body.firstName !== undefined) {
     const firstName = String(body.firstName).trim();
@@ -159,7 +170,7 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
       patch.lastName = lastName;
     }
   }
-  if (body.phone !== undefined) {
+  if (body.phone !== undefined && actorAdmin) {
     const raw = String(body.phone).trim();
     if (raw) {
       const phone = normalizePhone(raw);
@@ -172,6 +183,39 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
     if (email && !isEmail(email)) return res.status(400).json({ error: "Email inválido" });
     patch.email = email;
   }
+  if (body.role !== undefined) {
+    const role = parseRole(body.role);
+    if (!role) return res.status(400).json({ error: "Rol inválido" });
+    if (isSelf && role !== req.auth.role) {
+      return res.status(400).json({ error: "No puedes cambiar tu propio rol" });
+    }
+    patch.role = role;
+  }
+  if (body.permissions !== undefined) {
+    if (!Array.isArray(body.permissions)) {
+      return res.status(400).json({ error: "Permisos inválidos" });
+    }
+    patch.permissions = sanitizePermissions(body.permissions) || [];
+  }
+  if (body.status !== undefined) {
+    const status = parseStatus(body.status);
+    if (!status) return res.status(400).json({ error: "Estado inválido" });
+    if (isSelf && status === "INACTIVE") {
+      return res.status(400).json({ error: "No puedes desactivar tu propia cuenta" });
+    }
+    patch.status = status;
+  }
+  if (body.password) {
+    const password = String(body.password);
+    if (password.length < 12 || password.length > 200) {
+      return res.status(400).json({ error: "La contraseña debe tener al menos 12 caracteres" });
+    }
+    patch.passwordHash = await hashPassword(password);
+  }
+
+  if (patch.role === "user") {
+    patch.permissions = [];
+  }
 
   if (!Object.keys(patch).length) {
     return res.status(400).json({ error: "Nada para actualizar" });
@@ -182,10 +226,16 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
     if (out.error === "not_found") return res.status(404).json({ error: "No encontrado" });
     if (out.error === "phone_taken") return res.status(409).json({ error: "Ese teléfono ya existe" });
     if (out.error === "email_taken") return res.status(409).json({ error: "Ese email ya existe" });
-    if (out.error === "admin_email_required") {
-      return res.status(400).json({ error: "El admin necesita un email" });
+    if (out.error === "panel_email_required" || out.error === "admin_email_required") {
+      return res.status(400).json({ error: "La cuenta de panel necesita un email" });
+    }
+    if (out.error === "panel_password_required") {
+      return res.status(400).json({ error: "La cuenta de panel necesita una contraseña" });
     }
     if (out.error === "conflict") return res.status(409).json({ error: "Conflicto al guardar" });
+    if (out.revokeSessions) {
+      await revokeAllSessions(req.params.userId);
+    }
     res.json(publicUser(out.user));
   } catch (err) {
     console.error("update user", err);

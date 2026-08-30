@@ -1,6 +1,6 @@
 const { adminOrigin, isProd } = require("../../config");
 const { bearerToken, verifyAccessToken } = require("./tokens");
-const { hasPermission } = require("./permissions");
+const { hasPermission, isPanelRole } = require("./permissions");
 
 function requireAdminOrigin(req, res, next) {
   const origin = req.get("origin");
@@ -25,7 +25,7 @@ function requireAuth(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
-  if (!req.auth || req.auth.role !== "admin") {
+  if (!req.auth || !isPanelRole(req.auth.role)) {
     return res.status(403).json({ error: "Sin permisos" });
   }
   next();
@@ -33,7 +33,7 @@ function requireAdmin(req, res, next) {
 
 function requirePermission(permission) {
   return (req, res, next) => {
-    if (!req.auth || req.auth.role !== "admin") {
+    if (!req.auth || !isPanelRole(req.auth.role)) {
       return res.status(403).json({ error: "Sin permisos" });
     }
     if (!hasPermission(req.auth.role, permission, req.auth.permissions)) {

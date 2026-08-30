@@ -107,11 +107,12 @@ El usuario IAM de DynamoDB necesita `GetItem`, `PutItem`, `UpdateItem`, `Query` 
 
 ## Panel admin (`ivr-admin`)
 
-Solo entra quien tiene `role: admin`. Los clientes de teléfono son `role: user` y no pueden loguearse.
+Entran `admin` y `operator` con status `active`. Los clientes de teléfono son `role: user` y no pueden loguearse.
 
 - Login con email/password. Access JWT **1 h** (memoria). Refresh **7 días** en cookie httpOnly `rt`, path `/auth`, SameSite Lax (en producción: None + Secure).
 - Lista de usuarios, 50 por página, cursor de DynamoDB. Búsqueda por nombre, teléfono o email.
-- Ficha: editar nombre, teléfono y email; reproducir y descargar audios.
+- Ficha: editar nombre, teléfono (solo admin), email, rol, permisos y estado; reproducir y descargar audios.
+- Al desactivar o bajar de rol de panel se revocan las sesiones.
 - Al logout se limpia el contexto.
 
 El admin se crea al arrancar si no existe, con `ADMIN_EMAIL` y `ADMIN_PASSWORD` (≥ 12 caracteres). Si ya existe, no se pisa la contraseña.
@@ -136,13 +137,14 @@ Los webhooks de voz validan `X-Twilio-Signature`. El admin usa `Authorization: B
 | `POST` | `/voice/recording-complete` | guardar grabación |
 | `POST` | `/voice/status` | log de estado |
 | `POST` | `/operator/name` | nombre del cliente (JSON + PIN) |
-| `POST` | `/auth/login` | login admin |
+| `POST` | `/auth/login` | login del panel (admin u operator) |
 | `POST` | `/auth/refresh` | rota el refresh |
 | `POST` | `/auth/logout` | cierra sesión |
-| `GET` | `/auth/me` | admin actual |
+| `GET` | `/auth/me` | usuario del panel actual |
+| `POST` | `/admin/users` | crear usuario |
 | `GET` | `/admin/users` | listar / buscar (cursor, 50) |
 | `GET` | `/admin/users/:id` | detalle |
-| `PATCH` | `/admin/users/:id` | nombre, teléfono, email |
+| `PATCH` | `/admin/users/:id` | perfil, rol, permisos, estado, contraseña |
 | `GET` | `/admin/users/:id/audios` | grabaciones (cursor, 50) |
 | `GET` | `/admin/users/:id/audios/:sid/url` | URL firmada CloudFront |
 

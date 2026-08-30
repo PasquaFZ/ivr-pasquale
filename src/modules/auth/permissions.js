@@ -9,11 +9,22 @@ const PERMISSIONS = {
 
 const ALL = Object.values(PERMISSIONS);
 const ALLOWED = new Set(ALL);
+const PANEL_ROLES = new Set(["admin", "operator"]);
 
 const BY_ROLE = {
   admin: ALL,
+  operator: [
+    PERMISSIONS.USERS_LIST,
+    PERMISSIONS.USERS_READ,
+    PERMISSIONS.USERS_UPDATE,
+    PERMISSIONS.AUDIOS_PLAY,
+  ],
   user: [],
 };
+
+function isPanelRole(role) {
+  return PANEL_ROLES.has(role);
+}
 
 function sanitizePermissions(list) {
   if (!Array.isArray(list)) return null;
@@ -43,4 +54,5 @@ module.exports = {
   permissionsForRole,
   permissionsForUser,
   hasPermission,
+  isPanelRole,
 };

@@ -69,6 +69,25 @@ function decodeCursor(raw) {
   return out;
 }
 
+const ROLES = new Set(["admin", "operator", "user"]);
+
+function parseRole(value) {
+  const role = String(value || "").trim().toLowerCase();
+  return ROLES.has(role) ? role : null;
+}
+
+function parseStatus(value) {
+  const s = String(value || "").trim().toLowerCase();
+  if (s === "inactive" || s === "disabled" || s === "inactivo") return "INACTIVE";
+  if (s === "active" || s === "activo") return "ACTIVE";
+  return null;
+}
+
+function publicStatus(value) {
+  const s = String(value || "ACTIVE").toUpperCase();
+  return s === "INACTIVE" || s === "DISABLED" ? "inactive" : "active";
+}
+
 function publicUser(item) {
   if (!item) return null;
   return {
@@ -78,9 +97,10 @@ function publicUser(item) {
     phone: item.Phone || "",
     email: item.Email || "",
     role: item.Role || "user",
-    status: item.Status || "ACTIVE",
+    status: publicStatus(item.Status),
     createdAt: item.CreatedAt || "",
     permissions: Array.isArray(item.Permissions) ? item.Permissions : [],
+    hasPassword: Boolean(item.PasswordHash),
   };
 }
 
@@ -105,6 +125,9 @@ module.exports = {
   classifySearch,
   encodeCursor,
   decodeCursor,
+  parseRole,
+  parseStatus,
+  publicStatus,
   publicUser,
   publicAudio,
 };

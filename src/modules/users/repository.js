@@ -10,7 +10,7 @@ const { doc } = require("../../infra/db");
 const { tableName, PAGE_SIZE } = require("../../config");
 
 const USER_PROJECTION =
-  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms";
+  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash";
 const USER_NAMES = { "#R": "Role", "#S": "Status", "#Perms": "Permissions" };
 
 function nameSortKey(lastName, firstName, userId) {
@@ -168,7 +168,7 @@ async function createUser({ firstName, lastName, email, phone, passwordHash, rol
   const now = new Date().toISOString();
   const first = firstName.trim();
   const last = lastName.trim();
-  const roleName = role === "admin" ? "admin" : "user";
+  const roleName = role === "admin" || role === "operator" ? role : "user";
   const perms = Array.isArray(permissions) ? permissions : [];
 
   const item = {
@@ -311,11 +311,12 @@ async function listUsers({ cursor, namePrefix } = {}) {
 }
 
 async function updateUserProfile(userId, patch) {
-  const user = await getUserById(userId);
+  const user = await getUserAuthById(userId);
   if (!user) return { error: "not_found" };
 
   const transact = [];
   const sets = ["UpdatedAt = :now"];
+  const names = {};
   const values = { ":now": new Date().toISOString() };
   let removeEmail = false;
 
@@ -329,6 +330,10 @@ async function updateUserProfile(userId, patch) {
     values[":gpk"] = "ENTITY#USER";
     values[":gsk"] = nameSortKey(last, first, userId);
   }
+
+  const nextRole = patch.role !== undefined ? patch.role : (user.Role || "user");
+  const nextPanel = nextRole === "admin" || nextRole === "operator";
+  const prevPanel = user.Role === "admin" || user.Role === "operator";
 
   if (patch.phone !== undefined && patch.phone !== (user.Phone || "")) {
     const taken = await findUserByPhone(patch.phone);
@@ -360,7 +365,7 @@ async function updateUserProfile(userId, patch) {
     const next = patch.email;
     const prev = (user.Email || "").toLowerCase();
     if (next !== prev) {
-      if ((user.Role || "user") === "admin" && !next) return { error: "admin_email_required" };
+      if (nextPanel && !next) return { error: "panel_email_required" };
       if (next) {
         const taken = await findUserByEmail(next);
         if (taken && taken !== userId) return { error: "email_taken" };
@@ -391,15 +396,50 @@ async function updateUserProfile(userId, patch) {
     }
   }
 
-  transact.unshift({
-    Update: {
-      TableName: tableName(),
-      Key: { PK: `USER#${userId}`, SK: "METADATA" },
-      UpdateExpression: removeEmail ? `SET ${sets.join(", ")} REMOVE Email` : `SET ${sets.join(", ")}`,
-      ExpressionAttributeValues: values,
-      ConditionExpression: "attribute_exists(PK)",
-    },
-  });
+  const nextEmail = patch.email !== undefined ? patch.email : (user.Email || "");
+  if (nextPanel && !nextEmail) return { error: "panel_email_required" };
+  if (nextPanel && !user.PasswordHash && !patch.passwordHash) {
+    return { error: "panel_password_required" };
+  }
+
+  if (patch.role !== undefined) {
+    sets.push("#R = :role");
+    names["#R"] = "Role";
+    values[":role"] = patch.role;
+  }
+
+  if (patch.permissions !== undefined) {
+    const perms = nextRole === "user" ? [] : patch.permissions;
+    sets.push("#Perms = :perms");
+    names["#Perms"] = "Permissions";
+    values[":perms"] = perms;
+  } else if (nextRole === "user" && Array.isArray(user.Permissions) && user.Permissions.length) {
+    sets.push("#Perms = :perms");
+    names["#Perms"] = "Permissions";
+    values[":perms"] = [];
+  }
+
+  if (patch.status !== undefined) {
+    sets.push("#S = :status");
+    names["#S"] = "Status";
+    values[":status"] = patch.status;
+  }
+
+  if (patch.passwordHash) {
+    sets.push("PasswordHash = :ph");
+    values[":ph"] = patch.passwordHash;
+  }
+
+  const update = {
+    TableName: tableName(),
+    Key: { PK: `USER#${userId}`, SK: "METADATA" },
+    UpdateExpression: removeEmail ? `SET ${sets.join(", ")} REMOVE Email` : `SET ${sets.join(", ")}`,
+    ExpressionAttributeValues: values,
+    ConditionExpression: "attribute_exists(PK)",
+  };
+  if (Object.keys(names).length) update.ExpressionAttributeNames = names;
+
+  transact.unshift({ Update: update });
 
   try {
     await doc.send(new TransactWriteCommand({ TransactItems: transact }));
@@ -408,7 +448,12 @@ async function updateUserProfile(userId, patch) {
     throw err;
   }
 
-  return { user: await getUserById(userId) };
+  const prevStatus = String(user.Status || "ACTIVE").toUpperCase();
+  const nextStatus = patch.status !== undefined ? patch.status : prevStatus;
+  const becameInactive = String(nextStatus).toUpperCase() === "INACTIVE" && prevStatus !== "INACTIVE";
+  const lostPanel = prevPanel && !nextPanel;
+
+  return { user: await getUserById(userId), revokeSessions: becameInactive || lostPanel };
 }
 
 module.exports = {

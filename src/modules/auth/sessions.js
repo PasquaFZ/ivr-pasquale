@@ -1,4 +1,4 @@
-const { PutCommand, GetCommand, UpdateCommand } = require("@aws-sdk/lib-dynamodb");
+const { PutCommand, GetCommand, UpdateCommand, QueryCommand } = require("@aws-sdk/lib-dynamodb");
 const { doc } = require("../../infra/db");
 const { tableName, REFRESH_TTL_SEC } = require("../../config");
 
@@ -50,4 +50,26 @@ async function revokeSession(userId, jti) {
   }
 }
 
-module.exports = { putSession, getSession, revokeSession };
+async function revokeAllSessions(userId) {
+  let startKey;
+  do {
+    const params = {
+      TableName: tableName(),
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+      ExpressionAttributeValues: {
+        ":pk": `USER#${userId}`,
+        ":sk": "SESSION#",
+      },
+      ProjectionExpression: "SK",
+    };
+    if (startKey) params.ExclusiveStartKey = startKey;
+    const out = await doc.send(new QueryCommand(params));
+    const items = out.Items || [];
+    await Promise.all(
+      items.map((item) => revokeSession(userId, String(item.SK).replace(/^SESSION#/, ""))),
+    );
+    startKey = out.LastEvaluatedKey;
+  } while (startKey);
+}
+
+module.exports = { putSession, getSession, revokeSession, revokeAllSessions };
