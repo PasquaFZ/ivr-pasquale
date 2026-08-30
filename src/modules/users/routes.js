@@ -36,7 +36,8 @@ router.post("/users", requirePermission(PERMISSIONS.USERS_CREATE), async (req, r
   const body = req.body || {};
   const firstName = String(body.firstName || "").trim();
   const lastName = String(body.lastName || "").trim();
-  const role = parseRole(body.role) || "user";
+  let role = parseRole(body.role) || "user";
+  if (req.auth.role !== "admin") role = "user";
   const email = normalizeEmail(body.email);
   const password = String(body.password || "");
   const rawPhone = String(body.phone || "").trim();
@@ -184,6 +185,9 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
     patch.email = email;
   }
   if (body.role !== undefined) {
+    if (!actorAdmin) {
+      return res.status(403).json({ error: "Solo un administrador puede cambiar el rol" });
+    }
     const role = parseRole(body.role);
     if (!role) return res.status(400).json({ error: "Rol inválido" });
     if (isSelf && role !== req.auth.role) {
@@ -192,12 +196,18 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
     patch.role = role;
   }
   if (body.permissions !== undefined) {
+    if (!actorAdmin) {
+      return res.status(403).json({ error: "Solo un administrador puede cambiar los permisos" });
+    }
     if (!Array.isArray(body.permissions)) {
       return res.status(400).json({ error: "Permisos inválidos" });
     }
     patch.permissions = sanitizePermissions(body.permissions) || [];
   }
   if (body.status !== undefined) {
+    if (!actorAdmin) {
+      return res.status(403).json({ error: "Solo un administrador puede cambiar el estado" });
+    }
     const status = parseStatus(body.status);
     if (!status) return res.status(400).json({ error: "Estado inválido" });
     if (isSelf && status === "INACTIVE") {
@@ -206,6 +216,9 @@ router.patch("/users/:userId", requirePermission(PERMISSIONS.USERS_UPDATE), asyn
     patch.status = status;
   }
   if (body.password) {
+    if (!actorAdmin) {
+      return res.status(403).json({ error: "Solo un administrador puede cambiar la contraseña" });
+    }
     const password = String(body.password);
     if (password.length < 12 || password.length > 200) {
       return res.status(400).json({ error: "La contraseña debe tener al menos 12 caracteres" });
