@@ -99,6 +99,15 @@ function publicUser(item) {
     role: item.Role || "user",
     status: publicStatus(item.Status),
     createdAt: item.CreatedAt || "",
+    lastCallAt: item.LastCallAt || "",
+    lastCallDirection:
+      item.LastCallDirection === "outbound"
+        ? "outbound"
+        : item.LastCallDirection === "inbound"
+          ? "inbound"
+          : null,
+    lastInboundAt: item.LastInboundAt || "",
+    unreadInbound: Boolean(item.UnreadInbound),
     permissions: Array.isArray(item.Permissions) ? item.Permissions : [],
     hasPassword: Boolean(item.PasswordHash),
   };

@@ -11,7 +11,7 @@ const { tableName, PAGE_SIZE } = require("../../config");
 const { itemSnapshot, diffSnapshots } = require("../../shared/validate");
 
 const USER_PROJECTION =
-  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash";
+  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash, LastCallAt, LastCallDirection, LastInboundAt, LastOutboundAt, UnreadInbound";
 const USER_NAMES = { "#R": "Role", "#S": "Status", "#Perms": "Permissions" };
 
 function nameSortKey(lastName, firstName, userId) {
@@ -461,6 +461,40 @@ async function updateUserProfile(userId, patch) {
   return { user: afterUser, revokeSessions: becameInactive || lostPanel, changes };
 }
 
+async function touchCallActivity(userId, { direction, at = new Date().toISOString() }) {
+  if (!userId || (direction !== "inbound" && direction !== "outbound")) return;
+
+  let updateExpression = "SET LastCallAt = :at, LastCallDirection = :dir, UpdatedAt = :at";
+  const values = { ":at": at, ":dir": direction };
+
+  if (direction === "inbound") {
+    updateExpression += ", LastInboundAt = :at, UnreadInbound = :unread";
+    values[":unread"] = true;
+  } else {
+    updateExpression += ", LastOutboundAt = :at";
+  }
+
+  await doc.send(
+    new UpdateCommand({
+      TableName: tableName(),
+      Key: { PK: `USER#${userId}`, SK: "METADATA" },
+      UpdateExpression: updateExpression,
+      ExpressionAttributeValues: values,
+    }),
+  );
+}
+
+async function clearUnreadInbound(userId) {
+  await doc.send(
+    new UpdateCommand({
+      TableName: tableName(),
+      Key: { PK: `USER#${userId}`, SK: "METADATA" },
+      UpdateExpression: "SET UnreadInbound = :false",
+      ExpressionAttributeValues: { ":false": false },
+    }),
+  );
+}
+
 module.exports = {
   findUserByPhone,
   findUserByEmail,
@@ -473,4 +507,6 @@ module.exports = {
   createUser,
   listUsers,
   updateUserProfile,
+  touchCallActivity,
+  clearUnreadInbound,
 };

@@ -7,6 +7,7 @@ const {
   updateUserProfile,
   updateUserName,
   createUser,
+  clearUnreadInbound,
 } = require("./repository");
 const { hashPassword } = require("../auth/tokens");
 const {
@@ -162,6 +163,22 @@ router.get("/users/:userId", requirePermission(PERMISSIONS.USERS_READ), async (r
   } catch (err) {
     console.error("get user", err);
     res.status(500).json({ error: "Error al cargar el usuario" });
+  }
+});
+
+router.post("/users/:userId/seen", requirePermission(PERMISSIONS.USERS_READ), async (req, res) => {
+  if (!isUserId(req.params.userId)) return res.status(404).json({ error: "No encontrado" });
+  try {
+    const user = await getUserById(req.params.userId);
+    if (!user) return res.status(404).json({ error: "No encontrado" });
+    if (user.UnreadInbound) {
+      await clearUnreadInbound(req.params.userId);
+      user.UnreadInbound = false;
+    }
+    res.json(publicUser(user));
+  } catch (err) {
+    console.error("mark user seen", err);
+    res.status(500).json({ error: "Error al actualizar el usuario" });
   }
 });
 

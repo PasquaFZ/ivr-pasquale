@@ -1,4 +1,4 @@
-const { upsertUserByPhone } = require("../users/repository");
+const { upsertUserByPhone, touchCallActivity } = require("../users/repository");
 const { putAudioItem } = require("../audio/repository");
 const { startCallRecording, fetchCallFrom } = require("../../infra/twilio");
 const { downloadTwilioMp3, uploadCallAudio } = require("../../infra/storage");
@@ -7,6 +7,9 @@ async function registerIncoming(from, callSid) {
   try {
     const userId = await upsertUserByPhone(from);
     console.log("user", userId);
+    if (userId) {
+      await touchCallActivity(userId, { direction: "inbound" });
+    }
   } catch (err) {
     console.error("upsert user", err);
   }
@@ -56,6 +59,7 @@ async function saveRecording({ callSid, recordingUrl, status, duration, clientPh
     s3Key,
     direction,
   });
+  await touchCallActivity(userId, { direction });
   return { s3Key };
 }
 
