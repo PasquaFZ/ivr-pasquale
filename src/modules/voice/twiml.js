@@ -1,9 +1,12 @@
 const VoiceResponse = require("twilio").twiml.VoiceResponse;
 const { publicBaseUrl, departmentPhone } = require("../../config");
 
-const COMPANY = "Restoration A R";
+const COMPANY = {
+  en: "Restoration A ARE",
+  es: "Restoration A R",
+};
 
-const GREETING_EN = `Thank you for calling ${COMPANY}. For Spanish, press two. To continue in English, please remain on the line.`;
+const GREETING_EN = `Thank you for calling ${COMPANY.en}. For Spanish, press two. To continue in English, please remain on the line.`;
 
 const NOTICE = {
   en: "Please note that this call will be recorded for quality assurance, security, and service improvement purposes. Remaining on the line constitutes your acknowledgment of this notice.",
@@ -16,8 +19,8 @@ const MENU = {
 };
 
 const BUSY = {
-  en: `All of our representatives are currently unavailable. We will return your call as soon as possible. Thank you for contacting ${COMPANY}.`,
-  es: `En este momento todos nuestros representantes se encuentran ocupados. Retornaremos su llamada a la mayor brevedad. Gracias por comunicarse con ${COMPANY}.`,
+  en: `All of our representatives are currently unavailable. We will return your call as soon as possible. Thank you for contacting ${COMPANY.en}.`,
+  es: `En este momento todos nuestros representantes se encuentran ocupados. Retornaremos su llamada a la mayor brevedad. Gracias por comunicarse con ${COMPANY.es}.`,
 };
 
 const DEPT_NAME = {
@@ -137,8 +140,8 @@ const NO_NUMBER = {
 };
 
 const OUTBOUND_HELLO = {
-  en: `Hello. This call is from ${COMPANY}.`,
-  es: `Hola. Esta llamada es de parte de ${COMPANY}.`,
+  en: `Hello. This call is from ${COMPANY.en}.`,
+  es: `Hola. Esta llamada es de parte de ${COMPANY.es}.`,
 };
 
 function companyLanguageMenu() {
