@@ -29,6 +29,21 @@ const DEPT_NAME = {
   operator: { en: "operator department", es: "departamento de operadores" },
 };
 
+const AFTER_HOURS = {
+  en: `Thank you for calling ${COMPANY.en}. Our office is currently closed. Our business hours are Monday through Friday, from 9:00 AM to 4:00 PM Eastern Time. This call may be recorded.`,
+  es: `Gracias por comunicarse con ${COMPANY.es}. Nuestra oficina se encuentra cerrada en este momento. Nuestro horario de atención es de lunes a viernes, de 9:00 a.m. a 4:00 p.m., hora del Este. Esta llamada puede ser grabada.`,
+};
+
+const AFTER_HOURS_RECORD = {
+  en: "After the tone, please state your first name, last name, and the reason for your call. A member of our team will return your call as soon as possible.",
+  es: "Después del tono, indique su nombre, apellido y el motivo de su llamada. Un miembro de nuestro equipo se comunicará con usted a la brevedad.",
+};
+
+const AFTER_HOURS_THANKS = {
+  en: `Thank you for your message. We appreciate you contacting ${COMPANY.en}. Goodbye.`,
+  es: `Gracias por su mensaje. Agradecemos su comunicación con ${COMPANY.es}. Hasta luego.`,
+};
+
 function voiceLang(lang) {
   return lang === "es" ? "es-MX" : "en-US";
 }
@@ -76,6 +91,34 @@ function departmentMenu(lang) {
   });
   gather.say({ language: locale }, MENU[lang] || MENU.en);
   twiml.redirect({ method: "POST" }, `${publicBaseUrl()}/voice/department?lang=${lang}`);
+  return xml(twiml);
+}
+
+function afterHoursRecord(lang) {
+  const twiml = new VoiceResponse();
+  const locale = voiceLang(lang);
+  const base = publicBaseUrl();
+  twiml.say({ language: locale }, AFTER_HOURS[lang] || AFTER_HOURS.en);
+  twiml.say({ language: locale }, AFTER_HOURS_RECORD[lang] || AFTER_HOURS_RECORD.en);
+  const recQs = new URLSearchParams({ direction: "inbound", afterhours: "1" });
+  twiml.record({
+    action: `${base}/voice/afterhours/thanks?lang=${lang}`,
+    method: "POST",
+    recordingStatusCallback: `${base}/voice/recording-complete?${recQs}`,
+    recordingStatusCallbackMethod: "POST",
+    recordingStatusCallbackEvent: ["completed"],
+    maxLength: 120,
+    playBeep: true,
+    timeout: 5,
+  });
+  twiml.redirect({ method: "POST" }, `${base}/voice/afterhours/thanks?lang=${lang}`);
+  return xml(twiml);
+}
+
+function afterHoursThanks(lang) {
+  const twiml = new VoiceResponse();
+  twiml.say({ language: voiceLang(lang) }, AFTER_HOURS_THANKS[lang] || AFTER_HOURS_THANKS.en);
+  twiml.hangup();
   return xml(twiml);
 }
 
@@ -226,4 +269,6 @@ module.exports = {
   noNumberHangup,
   clientOutboundNotice,
   connectClient,
+  afterHoursRecord,
+  afterHoursThanks,
 };

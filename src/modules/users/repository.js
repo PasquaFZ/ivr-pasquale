@@ -11,7 +11,7 @@ const { tableName, PAGE_SIZE } = require("../../config");
 const { itemSnapshot, diffSnapshots } = require("../../shared/validate");
 
 const USER_PROJECTION =
-  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash, LastCallAt, LastCallDirection, LastInboundAt, LastOutboundAt, UnreadInbound";
+  "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash, LastCallAt, LastCallDirection, LastInboundAt, LastOutboundAt, UnreadInbound, LastInboundAfterHours";
 const USER_NAMES = { "#R": "Role", "#S": "Status", "#Perms": "Permissions" };
 
 function nameSortKey(lastName, firstName, userId) {
@@ -461,7 +461,7 @@ async function updateUserProfile(userId, patch) {
   return { user: afterUser, revokeSessions: becameInactive || lostPanel, changes };
 }
 
-async function touchCallActivity(userId, { direction, at = new Date().toISOString() }) {
+async function touchCallActivity(userId, { direction, at = new Date().toISOString(), afterHours }) {
   if (!userId || (direction !== "inbound" && direction !== "outbound")) return;
 
   let updateExpression = "SET LastCallAt = :at, LastCallDirection = :dir, UpdatedAt = :at";
@@ -470,6 +470,10 @@ async function touchCallActivity(userId, { direction, at = new Date().toISOStrin
   if (direction === "inbound") {
     updateExpression += ", LastInboundAt = :at, UnreadInbound = :unread";
     values[":unread"] = true;
+    if (afterHours !== undefined) {
+      updateExpression += ", LastInboundAfterHours = :afterHours";
+      values[":afterHours"] = afterHours;
+    }
   } else {
     updateExpression += ", LastOutboundAt = :at";
   }

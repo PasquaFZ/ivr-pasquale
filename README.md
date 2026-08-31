@@ -46,6 +46,8 @@ ivr-admin ──login JWT──► API /admin ──URL firmada──► CloudFr
 6. Si nadie atiende, se dice que devolverán la llamada y se cuelga.
 7. Se graba en dual-channel desde el inicio. El audio se liga al teléfono **del cliente**. Si no existe, se crea.
 
+**Fuera de horario** (lun–vie 9:00–16:00, hora del Este por defecto): tras elegir idioma, se informa que la oficina está cerrada, suena un tono y el cliente deja nombre, apellido y motivo en un mensaje de voz. La grabación queda en su ficha como llamada entrante.
+
 ```
 Cliente → COMPANY_PHONE → Twilio
   POST /voice/incoming            usuario + recording
@@ -216,6 +218,9 @@ Método **POST**.
 | `EN_TECHNICAL_PHONE` | técnico, inglés |
 | `EN_ADMINISTRATIVE_PHONE` | administrativo, inglés |
 | `OPERATOR_PIN` | PIN de `POST /operator/name` |
+| `OFFICE_TIMEZONE` | zona horaria del horario de oficina (default `America/New_York`) |
+| `OFFICE_OPEN_HOUR` | hora de apertura, 24 h (default `9`) |
+| `OFFICE_CLOSE_HOUR` | hora de cierre, 24 h (default `16`) |
 | `AWS_REGION` | región AWS |
 | `AWS_ACCESS_KEY_ID` | credenciales AWS |
 | `AWS_SECRET_ACCESS_KEY` | credenciales AWS |

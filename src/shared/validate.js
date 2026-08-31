@@ -107,6 +107,12 @@ function publicUser(item) {
           ? "inbound"
           : null,
     lastInboundAt: item.LastInboundAt || "",
+    lastInboundAfterHours:
+      item.LastInboundAfterHours === true
+        ? true
+        : item.LastInboundAfterHours === false
+          ? false
+          : null,
     unreadInbound: Boolean(item.UnreadInbound),
     permissions: Array.isArray(item.Permissions) ? item.Permissions : [],
     hasPassword: Boolean(item.PasswordHash),
@@ -121,6 +127,8 @@ function publicAudio(item) {
     direction: item.Direction,
     uploadedAt: item.UploadedAt || "",
     mimeType: item.MimeType || "audio/mpeg",
+    afterHours:
+      item.AfterHours === true ? true : item.AfterHours === false ? false : null,
   };
 }
 

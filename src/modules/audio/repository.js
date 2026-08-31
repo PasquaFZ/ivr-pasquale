@@ -2,23 +2,26 @@ const { QueryCommand, PutCommand } = require("@aws-sdk/lib-dynamodb");
 const { doc } = require("../../infra/db");
 const { tableName, PAGE_SIZE } = require("../../config");
 
-async function putAudioItem({ userId, callSid, durationSeconds, s3Key, direction }) {
+async function putAudioItem({ userId, callSid, durationSeconds, s3Key, direction, afterHours }) {
   const now = new Date().toISOString();
+  const item = {
+    PK: `USER#${userId}`,
+    SK: `AUDIO#${now}#${callSid}`,
+    AudioId: callSid,
+    CallSid: callSid,
+    DurationSeconds: durationSeconds,
+    Direction: direction,
+    S3Bucket: process.env.S3_BUCKET,
+    S3Key: s3Key,
+    MimeType: "audio/mpeg",
+    UploadedAt: now,
+  };
+  if (afterHours === true) item.AfterHours = true;
+  if (afterHours === false) item.AfterHours = false;
   await doc.send(
     new PutCommand({
       TableName: tableName(),
-      Item: {
-        PK: `USER#${userId}`,
-        SK: `AUDIO#${now}#${callSid}`,
-        AudioId: callSid,
-        CallSid: callSid,
-        DurationSeconds: durationSeconds,
-        Direction: direction,
-        S3Bucket: process.env.S3_BUCKET,
-        S3Key: s3Key,
-        MimeType: "audio/mpeg",
-        UploadedAt: now,
-      },
+      Item: item,
     }),
   );
 }
@@ -32,7 +35,7 @@ async function listAudios(userId, cursor) {
         ":pk": `USER#${userId}`,
         ":sk": "AUDIO#",
       },
-      ProjectionExpression: "CallSid, AudioId, DurationSeconds, Direction, UploadedAt, MimeType, S3Bucket, S3Key",
+      ProjectionExpression: "CallSid, AudioId, DurationSeconds, Direction, UploadedAt, MimeType, S3Bucket, S3Key, AfterHours",
       Limit: PAGE_SIZE,
       ScanIndexForward: false,
       ExclusiveStartKey: cursor,

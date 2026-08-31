@@ -2,8 +2,9 @@ const express = require("express");
 const { requireTwilio } = require("../../infra/twilio");
 const { isCompanyCaller, isOwnedNumber, isInternalPhone } = require("../../config");
 const twiml = require("./twiml");
-const { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, deptFrom } = require("./parse");
+const { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, afterHoursFrom, deptFrom } = require("./parse");
 const { registerIncoming, registerOutgoing, saveRecording } = require("./service");
+const { isOfficeOpen } = require("./officeHours");
 
 const router = express.Router();
 
@@ -23,16 +24,29 @@ router.post("/incoming", requireTwilio, async (req, res) => {
     return;
   }
 
-  await registerIncoming(from, callSid);
+  await registerIncoming(from, callSid, { recordCall: isOfficeOpen() });
   xml(res, twiml.greeting());
 });
 
 router.post("/language", requireTwilio, (req, res) => {
-  xml(res, twiml.afterLanguage(langFrom(req)));
+  const lang = langFrom(req);
+  if (!isOfficeOpen()) {
+    xml(res, twiml.afterHoursRecord(lang));
+    return;
+  }
+  xml(res, twiml.afterLanguage(lang));
+});
+
+router.post("/afterhours/thanks", requireTwilio, (req, res) => {
+  xml(res, twiml.afterHoursThanks(langFrom(req)));
 });
 
 router.post("/department", requireTwilio, (req, res) => {
   const lang = langFrom(req);
+  if (!isOfficeOpen()) {
+    xml(res, twiml.afterHoursRecord(lang));
+    return;
+  }
   const dept = deptFrom(req);
   if (!dept) {
     xml(res, twiml.departmentMenu(lang));
@@ -109,7 +123,8 @@ router.post("/recording-complete", requireTwilio, async (req, res) => {
   const duration = Number(req.body.RecordingDuration || 0);
   const clientPhone = clientPhoneFromDigits(req.query.client);
   const direction = callDirectionFrom(req);
-  console.log("recording-complete", { callSid, duration, clientPhone, direction });
+  const afterHours = afterHoursFrom(req);
+  console.log("recording-complete", { callSid, duration, clientPhone, direction, afterHours });
 
   try {
     const out = await saveRecording({
@@ -119,6 +134,7 @@ router.post("/recording-complete", requireTwilio, async (req, res) => {
       duration,
       clientPhone,
       direction,
+      afterHours,
     });
     if (out.s3Key) console.log("saved audio", out.s3Key);
     res.sendStatus(200);

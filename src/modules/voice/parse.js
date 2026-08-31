@@ -29,6 +29,13 @@ function callDirectionFrom(req) {
   return null;
 }
 
+function afterHoursFrom(req) {
+  const raw = req.query.afterhours;
+  if (raw === "1" || raw === "true") return true;
+  if (raw === "0" || raw === "false") return false;
+  return undefined;
+}
+
 function deptFrom(req) {
   const digit = req.body.Digits;
   if (digit === "0") return "admin";
@@ -39,4 +46,4 @@ function deptFrom(req) {
   return null;
 }
 
-module.exports = { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, deptFrom };
+module.exports = { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, afterHoursFrom, deptFrom };
