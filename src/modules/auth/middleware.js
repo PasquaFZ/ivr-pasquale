@@ -1,10 +1,10 @@
-const { adminOrigin, isProd } = require("../../config");
+const { isAdminOrigin, isProd } = require("../../config");
 const { bearerToken, verifyAccessToken } = require("./tokens");
 const { hasPermission, isPanelRole } = require("./permissions");
 
 function requireAdminOrigin(req, res, next) {
   const origin = req.get("origin");
-  if (origin && origin.replace(/\/$/, "") !== adminOrigin()) {
+  if (origin && !isAdminOrigin(origin)) {
     return res.status(403).json({ error: "Origen no permitido" });
   }
   if (isProd() && !origin) {

@@ -14,8 +14,21 @@ function isProd() {
   return process.env.NODE_ENV === "production";
 }
 
+function adminOrigins() {
+  const raw = process.env.ADMIN_ORIGIN || "http://localhost:5173";
+  return raw
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+}
+
 function adminOrigin() {
-  return (process.env.ADMIN_ORIGIN || "http://localhost:5173").replace(/\/$/, "");
+  return adminOrigins()[0];
+}
+
+function isAdminOrigin(origin) {
+  if (!origin) return false;
+  return adminOrigins().includes(origin.replace(/\/$/, ""));
 }
 
 function accessSecret() {
@@ -107,6 +120,8 @@ module.exports = {
   logTableName,
   isProd,
   adminOrigin,
+  adminOrigins,
+  isAdminOrigin,
   accessSecret,
   refreshSecret,
   authConfigured,

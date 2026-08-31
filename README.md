@@ -229,7 +229,7 @@ Método **POST**.
 | `JWT_REFRESH_SECRET` | HMAC refresh, distinto al access (≥ 32 chars) |
 | `ADMIN_EMAIL` | email del admin (seed al arrancar) |
 | `ADMIN_PASSWORD` | password del admin (≥ 12 chars) |
-| `ADMIN_ORIGIN` | origen del panel (CORS y cookies) |
+| `ADMIN_ORIGIN` | origen(es) del panel, separados por coma (CORS y cookies) |
 
 Panel (`ivr-admin/.env`):
 

@@ -2,7 +2,7 @@ const helmet = require("helmet");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const express = require("express");
-const { adminOrigin } = require("../config");
+const { isAdminOrigin } = require("../config");
 
 function applyHttp(app) {
   app.set("trust proxy", 1);
@@ -15,7 +15,7 @@ function applyHttp(app) {
     cors({
       origin(origin, cb) {
         if (!origin) return cb(null, true);
-        if (origin.replace(/\/$/, "") === adminOrigin()) return cb(null, true);
+        if (isAdminOrigin(origin)) return cb(null, true);
         cb(null, false);
       },
       credentials: true,
