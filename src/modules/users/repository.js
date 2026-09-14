@@ -13,9 +13,15 @@ const { itemSnapshot, diffSnapshots } = require("../../shared/validate");
 const USER_PROJECTION =
   "UserId, FirstName, LastName, Phone, Email, #R, #S, CreatedAt, UpdatedAt, #Perms, PasswordHash, LastCallAt, LastCallDirection, LastInboundAt, LastOutboundAt, UnreadInbound, LastInboundAfterHours";
 const USER_NAMES = { "#R": "Role", "#S": "Status", "#Perms": "Permissions" };
+const USER_ENTITY_PK = "ENTITY#USER";
+const NEVER_CALLED_AT = "0000-00-00T00:00:00.000Z";
 
 function nameSortKey(lastName, firstName, userId) {
   return `${lastName.toLowerCase()}#${firstName.toLowerCase()}#${userId}`;
+}
+
+function lastCallSortKey(lastCallAt, userId) {
+  return `${lastCallAt || NEVER_CALLED_AT}#${userId}`;
 }
 
 function searchName(firstName, lastName) {
@@ -77,11 +83,13 @@ async function ensureListed(userId) {
       TableName: tableName(),
       Key: { PK: `USER#${userId}`, SK: "METADATA" },
       UpdateExpression:
-        "SET GSI2PK = if_not_exists(GSI2PK, :gpk), GSI2SK = if_not_exists(GSI2SK, :gsk), #R = if_not_exists(#R, :role)",
+        "SET GSI2PK = if_not_exists(GSI2PK, :gpk), GSI2SK = if_not_exists(GSI2SK, :gsk), GSI3PK = if_not_exists(GSI3PK, :g3pk), GSI3SK = if_not_exists(GSI3SK, :g3sk), #R = if_not_exists(#R, :role)",
       ExpressionAttributeNames: { "#R": "Role" },
       ExpressionAttributeValues: {
-        ":gpk": "ENTITY#USER",
+        ":gpk": USER_ENTITY_PK,
         ":gsk": `#${userId}`,
+        ":g3pk": USER_ENTITY_PK,
+        ":g3sk": lastCallSortKey("", userId),
         ":role": "user",
       },
     }),
@@ -112,8 +120,10 @@ async function upsertUserByPhone(phone) {
               Role: "user",
               Status: "ACTIVE",
               SearchName: "",
-              GSI2PK: "ENTITY#USER",
+              GSI2PK: USER_ENTITY_PK,
               GSI2SK: `#${userId}`,
+              GSI3PK: USER_ENTITY_PK,
+              GSI3SK: lastCallSortKey("", userId),
               CreatedAt: now,
             },
             ConditionExpression: "attribute_not_exists(PK)",
@@ -155,7 +165,7 @@ async function updateUserName(phone, firstName, lastName) {
         ":f": first,
         ":l": last,
         ":sn": searchName(first, last),
-        ":gpk": "ENTITY#USER",
+        ":gpk": USER_ENTITY_PK,
         ":gsk": nameSortKey(last, first, userId),
       },
     }),
@@ -182,8 +192,10 @@ async function createUser({ firstName, lastName, email, phone, passwordHash, rol
     LastName: last,
     SearchName: searchName(first, last),
     Permissions: perms,
-    GSI2PK: "ENTITY#USER",
+    GSI2PK: USER_ENTITY_PK,
     GSI2SK: nameSortKey(last, first, userId),
+    GSI3PK: USER_ENTITY_PK,
+    GSI3SK: lastCallSortKey("", userId),
     CreatedAt: now,
   };
   if (email) item.Email = email;
@@ -254,14 +266,16 @@ async function applyAdminSeedProfile(userId, { firstName, lastName, permissions 
       TableName: tableName(),
       Key: { PK: `USER#${userId}`, SK: "METADATA" },
       UpdateExpression:
-        "SET FirstName = :f, LastName = :l, SearchName = :sn, GSI2PK = :gpk, GSI2SK = :gsk, #R = :role, #S = :status, #Perms = :perms",
+        "SET FirstName = :f, LastName = :l, SearchName = :sn, GSI2PK = :gpk, GSI2SK = :gsk, GSI3PK = if_not_exists(GSI3PK, :g3pk), GSI3SK = if_not_exists(GSI3SK, :g3sk), #R = :role, #S = :status, #Perms = :perms",
       ExpressionAttributeNames: { "#R": "Role", "#S": "Status", "#Perms": "Permissions" },
       ExpressionAttributeValues: {
         ":f": first,
         ":l": last,
         ":sn": searchName(first, last),
-        ":gpk": "ENTITY#USER",
+        ":gpk": USER_ENTITY_PK,
         ":gsk": nameSortKey(last, first, userId),
+        ":g3pk": USER_ENTITY_PK,
+        ":g3sk": lastCallSortKey("", userId),
         ":role": "admin",
         ":status": "ACTIVE",
         ":perms": permissions || [],
@@ -270,38 +284,62 @@ async function applyAdminSeedProfile(userId, { firstName, lastName, permissions 
   );
 }
 
+function userIdFromIndexItem(item) {
+  if (item.UserId) return item.UserId;
+  return String(item.PK || "").replace(/^USER#/, "");
+}
+
 async function hydrateUsers(items) {
   if (!items.length) return [];
   if (items[0].UserId) return items;
 
-  const keys = items.map((item) => ({ PK: item.PK, SK: "METADATA" }));
-  const out = await doc.send(
-    new BatchGetCommand({
-      RequestItems: {
-        [tableName()]: {
-          Keys: keys,
-          ProjectionExpression: USER_PROJECTION,
-          ExpressionAttributeNames: USER_NAMES,
+  const keys = items
+    .filter((item) => item.PK)
+    .map((item) => ({ PK: item.PK, SK: item.SK || "METADATA" }));
+  if (!keys.length) return [];
+
+  const byId = new Map();
+  let pending = keys;
+  while (pending.length) {
+    const out = await doc.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [tableName()]: {
+            Keys: pending,
+            ProjectionExpression: USER_PROJECTION,
+            ExpressionAttributeNames: USER_NAMES,
+          },
         },
-      },
-    }),
-  );
-  return (out.Responses && out.Responses[tableName()]) || [];
+      }),
+    );
+    const table = tableName();
+    for (const item of (out.Responses && out.Responses[table]) || []) {
+      if (item.UserId) byId.set(item.UserId, item);
+    }
+    pending = (out.UnprocessedKeys && out.UnprocessedKeys[table] && out.UnprocessedKeys[table].Keys) || [];
+  }
+
+  return items.map((item) => byId.get(userIdFromIndexItem(item))).filter(Boolean);
 }
 
 async function listUsers({ cursor, namePrefix } = {}) {
-  const params = {
-    TableName: tableName(),
-    IndexName: "GSI2",
-    KeyConditionExpression: namePrefix
-      ? "GSI2PK = :pk AND begins_with(GSI2SK, :sk)"
-      : "GSI2PK = :pk",
-    ExpressionAttributeValues: namePrefix
-      ? { ":pk": "ENTITY#USER", ":sk": namePrefix }
-      : { ":pk": "ENTITY#USER" },
-    Limit: PAGE_SIZE,
-    ExclusiveStartKey: cursor,
-  };
+  const params = namePrefix
+    ? {
+        TableName: tableName(),
+        IndexName: "GSI2",
+        KeyConditionExpression: "GSI2PK = :pk AND begins_with(GSI2SK, :sk)",
+        ExpressionAttributeValues: { ":pk": USER_ENTITY_PK, ":sk": namePrefix },
+        Limit: PAGE_SIZE,
+      }
+    : {
+        TableName: tableName(),
+        IndexName: "GSI3",
+        KeyConditionExpression: "GSI3PK = :pk",
+        ExpressionAttributeValues: { ":pk": USER_ENTITY_PK },
+        Limit: PAGE_SIZE,
+        ScanIndexForward: false,
+      };
+  if (cursor) params.ExclusiveStartKey = cursor;
 
   const out = await doc.send(new QueryCommand(params));
   const items = await hydrateUsers(out.Items || []);
@@ -328,7 +366,7 @@ async function updateUserProfile(userId, patch) {
     values[":f"] = first;
     values[":l"] = last;
     values[":sn"] = searchName(first, last);
-    values[":gpk"] = "ENTITY#USER";
+    values[":gpk"] = USER_ENTITY_PK;
     values[":gsk"] = nameSortKey(last, first, userId);
   }
 
@@ -464,8 +502,14 @@ async function updateUserProfile(userId, patch) {
 async function touchCallActivity(userId, { direction, at = new Date().toISOString(), afterHours }) {
   if (!userId || (direction !== "inbound" && direction !== "outbound")) return;
 
-  let updateExpression = "SET LastCallAt = :at, LastCallDirection = :dir, UpdatedAt = :at";
-  const values = { ":at": at, ":dir": direction };
+  let updateExpression =
+    "SET LastCallAt = :at, LastCallDirection = :dir, UpdatedAt = :at, GSI3PK = :g3pk, GSI3SK = :g3sk";
+  const values = {
+    ":at": at,
+    ":dir": direction,
+    ":g3pk": USER_ENTITY_PK,
+    ":g3sk": lastCallSortKey(at, userId),
+  };
 
   if (direction === "inbound") {
     updateExpression += ", LastInboundAt = :at, UnreadInbound = :unread";

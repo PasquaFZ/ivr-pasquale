@@ -2,7 +2,7 @@ const EMAIL_RE = /^[a-z0-9._%+\-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 const NAME_RE = /^[\p{L}\p{M} .'-]{1,80}$/u;
 const USER_ID_RE = /^[A-Za-z0-9_-]{10,64}$/;
 const CALL_SID_RE = /^[A-Za-z0-9]{10,64}$/;
-const CURSOR_KEYS = ["PK", "SK", "GSI1PK", "GSI1SK", "GSI2PK", "GSI2SK"];
+const CURSOR_KEYS = ["PK", "SK", "GSI1PK", "GSI1SK", "GSI2PK", "GSI2SK", "GSI3PK", "GSI3SK"];
 
 function normalizeEmail(raw) {
   return String(raw || "").trim().toLowerCase();
@@ -65,7 +65,7 @@ function decodeCursor(raw) {
   for (const k of CURSOR_KEYS) {
     if (typeof obj[k] === "string" && obj[k].length < 512) out[k] = obj[k];
   }
-  if (!out.PK && !out.GSI1PK && !out.GSI2PK) return null;
+  if (!out.PK && !out.GSI1PK && !out.GSI2PK && !out.GSI3PK) return null;
   return out;
 }
 
