@@ -3,13 +3,54 @@ const { requireTwilio } = require("../../infra/twilio");
 const { isCompanyCaller, isOwnedNumber, isInternalPhone } = require("../../config");
 const twiml = require("./twiml");
 const { langFrom, outboundLangFrom, clientPhoneFromDigits, callDirectionFrom, afterHoursFrom, deptFrom } = require("./parse");
-const { registerIncoming, registerOutgoing, saveRecording } = require("./service");
+const {
+  registerIncoming,
+  registerOutgoing,
+  startOutboundConference,
+  handleOutboundClientStatus,
+  handleOutboundConferenceEvent,
+  saveRecording,
+} = require("./service");
 const { isOfficeOpen } = require("./officeHours");
 
 const router = express.Router();
+const CALL_SID_RE = /^CA[a-f0-9]{32}$/i;
+const CONFERENCE_SID_RE = /^CF[a-f0-9]{32}$/i;
+const ROOM_RE = /^outbound-CA[a-f0-9]{32}$/i;
 
 function xml(res, body) {
   res.type("text/xml").send(body);
+}
+
+async function connectOutboundClient(req, res, lang, clientPhone) {
+  const operatorCallSid = String(req.body.CallSid || "");
+  if (!CALL_SID_RE.test(operatorCallSid)) {
+    console.error("outbound missing operator CallSid");
+    xml(res, twiml.outboundFailed(lang));
+    return;
+  }
+
+  await registerOutgoing(clientPhone);
+  try {
+    const { room, clientCallSid } = await startOutboundConference({
+      operatorCallSid,
+      clientPhone,
+      lang,
+    });
+    xml(
+      res,
+      twiml.joinOperatorConference({
+        room,
+        clientPhone,
+        lang,
+        operatorCallSid,
+        clientCallSid,
+      }),
+    );
+  } catch (err) {
+    console.error("start outbound conference", err);
+    xml(res, twiml.outboundFailed(lang));
+  }
 }
 
 router.post("/incoming", requireTwilio, async (req, res) => {
@@ -70,8 +111,7 @@ router.post("/outbound/language", requireTwilio, async (req, res) => {
   if (to && !isOwnedNumber(to) && !isCompanyCaller(to)) {
     const phone = clientPhoneFromDigits(to);
     if (phone && !isInternalPhone(phone)) {
-      await registerOutgoing(phone);
-      xml(res, twiml.connectClient(lang, phone));
+      await connectOutboundClient(req, res, lang, phone);
       return;
     }
   }
@@ -99,12 +139,91 @@ router.post("/outbound/connect", requireTwilio, async (req, res) => {
     return;
   }
 
-  await registerOutgoing(phone);
-  xml(res, twiml.connectClient(lang, phone));
+  await connectOutboundClient(req, res, lang, phone);
 });
 
 router.post("/outbound/client", requireTwilio, (req, res) => {
+  const room = String(req.query.room || "");
+  const operatorCallSid = String(req.query.operator || "");
+  const clientCallSid = String(req.body.CallSid || "");
+  const clientPhone = clientPhoneFromDigits(req.query.client);
+  const lang = langFrom(req);
+
+  // Compatibilidad con un <Dial><Number> emitido antes de este despliegue.
+  if (!ROOM_RE.test(room) || !CALL_SID_RE.test(operatorCallSid) || !CALL_SID_RE.test(clientCallSid) || !clientPhone) {
+    xml(res, twiml.clientOutboundNotice(lang));
+    return;
+  }
+
+  xml(
+    res,
+    twiml.joinClientConference({
+      room,
+      clientPhone,
+      lang,
+      operatorCallSid,
+      clientCallSid,
+    }),
+  );
+});
+
+router.post("/outbound/conference-wait", requireTwilio, (req, res) => {
+  xml(res, twiml.outboundConferenceWait(langFrom(req)));
+});
+
+router.post("/outbound/conference-announcement", requireTwilio, (req, res) => {
   xml(res, twiml.clientOutboundNotice(langFrom(req)));
+});
+
+router.post("/outbound/no-answer", requireTwilio, (req, res) => {
+  xml(res, twiml.clientNoAnswer(langFrom(req)));
+});
+
+router.post("/outbound/client-status", requireTwilio, async (req, res) => {
+  const status = String(req.body.CallStatus || "");
+  const operatorCallSid = String(req.query.operator || "");
+  console.log("outbound client status", { status, clientCallSid: req.body.CallSid, operatorCallSid });
+
+  try {
+    await handleOutboundClientStatus({
+      status,
+      operatorCallSid: CALL_SID_RE.test(operatorCallSid) ? operatorCallSid : "",
+      lang: langFrom(req),
+    });
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("outbound client status", err);
+    res.sendStatus(500);
+  }
+});
+
+router.post("/outbound/conference-status", requireTwilio, async (req, res) => {
+  const event = String(req.body.StatusCallbackEvent || "");
+  const conferenceSid = String(req.body.ConferenceSid || "");
+  const participantCallSid = String(req.body.CallSid || "");
+  const operatorCallSid = String(req.query.operator || "");
+  const clientCallSid = String(req.query.clientCall || "");
+  console.log("outbound conference status", { event, conferenceSid, participantCallSid });
+
+  if (!CONFERENCE_SID_RE.test(conferenceSid)) {
+    res.sendStatus(400);
+    return;
+  }
+
+  try {
+    await handleOutboundConferenceEvent({
+      event,
+      conferenceSid,
+      participantCallSid,
+      operatorCallSid: CALL_SID_RE.test(operatorCallSid) ? operatorCallSid : "",
+      clientCallSid: CALL_SID_RE.test(clientCallSid) ? clientCallSid : "",
+      lang: langFrom(req),
+    });
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("outbound conference status", err);
+    res.sendStatus(500);
+  }
 });
 
 router.post("/dial-status", requireTwilio, (req, res) => {
@@ -112,6 +231,10 @@ router.post("/dial-status", requireTwilio, (req, res) => {
   console.log("dial-status", status);
   if (status === "completed") {
     xml(res, twiml.empty());
+    return;
+  }
+  if (req.query.leg === "client") {
+    xml(res, twiml.clientNoAnswer(langFrom(req)));
     return;
   }
   xml(res, twiml.operatorBusy(langFrom(req)));

@@ -62,21 +62,25 @@ Cliente → COMPANY_PHONE → Twilio
 
 ## Llamada de salida (la empresa llama al cliente)
 
-Pueden activarla **`COMPANY_PHONE`** y los teléfonos de departamento (`ES_*` / `EN_*`), **siempre marcando Twilio**.
+Pueden activarla **`COMPANY_PHONE`**, los teléfonos de departamento (`ES_*` / `EN_*`) y los de `OUTBOUND_EXTRA_CALLERS`, **siempre marcando Twilio**.
 
 1. A la empresa se le pregunta el idioma: **1 inglés**, **2 español**.
 2. Marca el número del cliente y **numeral** (`#`). 10 dígitos se toman como EE.UU. (`+1`).
 3. Si el cliente no existe, se crea. Si existe, el audio se le asigna a ese número.
-4. El cliente oye: saludo, que la llamada es de parte de Restoration A R, y el mismo aviso de grabación.
-5. Si permanece en la línea, quedan conectadas ambas partes y se graba la conversación (dual-channel, desde que el cliente ya contestó).
+4. La empresa entra en una conferencia privada y Twilio llama al cliente durante un máximo de 40 segundos.
+5. Cuando el cliente o su buzón atiende, entra a la conferencia. El saludo y el aviso de grabación se reproducen para ambos participantes.
+6. El operador escucha a la persona o al buzón y puede dejar el mensaje después del tono. Si nadie atiende, oye un aviso y la llamada termina.
+7. La grabación dual empieza antes de marcar al cliente y se guarda en la ficha como audio `outbound`.
 
 ```
 Empresa/depto → Twilio
   POST /voice/incoming
   POST /voice/outbound/language   1 = EN, 2 = ES
-  POST /voice/outbound/connect    dígitos del cliente
-  POST /voice/outbound/client     saludo + aviso al cliente
-  POST /voice/dial-status
+  POST /voice/outbound/connect    inicia grabación + conferencia + llamada al cliente
+  POST /voice/outbound/client     cliente entra a la conferencia
+  POST /voice/outbound/conference-status
+  POST /voice/outbound/conference-announcement
+  POST /voice/outbound/client-status
   POST /voice/recording-complete?client=+1…   audio ligado al cliente
 ```
 
@@ -140,9 +144,14 @@ Los webhooks de voz validan `X-Twilio-Signature`. El admin usa `Authorization: B
 | `POST` | `/voice/department` | menú y Dial al departamento |
 | `POST` | `/voice/whisper` | anuncio al operador (solo departamento) |
 | `POST` | `/voice/outbound/language` | idioma de la llamada saliente |
-| `POST` | `/voice/outbound/connect` | número del cliente y Dial |
-| `POST` | `/voice/outbound/client` | saludo y aviso al cliente |
-| `POST` | `/voice/dial-status` | resultado del Dial |
+| `POST` | `/voice/outbound/connect` | número del cliente e inicio de conferencia |
+| `POST` | `/voice/outbound/client` | unir cliente a la conferencia |
+| `POST` | `/voice/outbound/conference-wait` | espera del operador |
+| `POST` | `/voice/outbound/conference-announcement` | saludo y aviso para ambos |
+| `POST` | `/voice/outbound/conference-status` | eventos de participantes |
+| `POST` | `/voice/outbound/client-status` | resultado de la llamada al cliente |
+| `POST` | `/voice/outbound/no-answer` | aviso al operador si nadie atiende |
+| `POST` | `/voice/dial-status` | resultado de Dial a departamentos y compatibilidad |
 | `POST` | `/voice/recording-complete` | guardar grabación |
 | `POST` | `/voice/status` | log de estado |
 | `POST` | `/operator/name` | nombre del cliente (JSON + PIN) |
@@ -211,6 +220,7 @@ Método **POST**.
 | `TWILIO_PHONE_NUMBER` | Caller ID al marcar (operador o cliente) |
 | `PUBLIC_BASE_URL` | URL pública HTTPS de este servidor |
 | `COMPANY_PHONE` | celular de la empresa (entrada + puede activar salida) |
+| `OUTBOUND_EXTRA_CALLERS` | números extra autorizados para salidas (pruebas), separados por coma |
 | `ES_OPERATOR_PHONE` | operador, llamada en español |
 | `ES_TECHNICAL_PHONE` | técnico, español |
 | `ES_ADMINISTRATIVE_PHONE` | administrativo, español |

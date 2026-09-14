@@ -35,6 +35,51 @@ function startCallRecording(callSid, extraQuery) {
     });
 }
 
+function createOutboundCall({ to, url, statusCallback, timeout = 40 }) {
+  return client().calls.create({
+    to,
+    from: process.env.TWILIO_PHONE_NUMBER,
+    url,
+    method: "POST",
+    timeout,
+    statusCallback,
+    statusCallbackMethod: "POST",
+    statusCallbackEvent: ["completed", "busy", "failed", "no-answer", "canceled"],
+  });
+}
+
+function announceConference(conferenceSid, announceUrl) {
+  return client().conferences(conferenceSid).update({
+    announceUrl,
+    announceMethod: "POST",
+  });
+}
+
+async function countConferenceParticipants(conferenceSid) {
+  const participants = await client()
+    .conferences(conferenceSid)
+    .participants.list({ status: "connected", limit: 3 });
+  return participants.length;
+}
+
+function redirectCall(callSid, url) {
+  return client().calls(callSid).update({
+    url,
+    method: "POST",
+  });
+}
+
+async function endCall(callSid) {
+  const call = await client().calls(callSid).fetch();
+  if (call.status === "queued" || call.status === "ringing") {
+    return client().calls(callSid).update({ status: "canceled" });
+  }
+  if (call.status === "in-progress") {
+    return client().calls(callSid).update({ status: "completed" });
+  }
+  return call;
+}
+
 async function fetchCallFrom(callSid) {
   const call = await client().calls(callSid).fetch();
   return call.from;
@@ -44,5 +89,10 @@ module.exports = {
   client,
   requireTwilio,
   startCallRecording,
+  createOutboundCall,
+  announceConference,
+  countConferenceParticipants,
+  redirectCall,
+  endCall,
   fetchCallFrom,
 };

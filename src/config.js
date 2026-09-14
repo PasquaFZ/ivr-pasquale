@@ -82,10 +82,25 @@ function normalizeE164(raw) {
   return `+${digits}`;
 }
 
+function extraOutboundCallers() {
+  const raw = process.env.OUTBOUND_EXTRA_CALLERS || "";
+  return raw
+    .split(",")
+    .map((phone) => normalizeE164(phone.trim()))
+    .filter(Boolean);
+}
+
+function isExtraOutboundCaller(from) {
+  const n = normalizeE164(from);
+  if (!n) return false;
+  return extraOutboundCallers().includes(n);
+}
+
 function isCompanyCaller(from) {
   const n = normalizeE164(from);
   if (!n) return false;
   if (normalizeE164(process.env.COMPANY_PHONE) === n) return true;
+  if (isExtraOutboundCaller(from)) return true;
   return isDepartmentCaller(from);
 }
 

@@ -146,6 +146,35 @@ function operatorBusy(lang) {
   return xml(twiml);
 }
 
+const CLIENT_NO_ANSWER = {
+  en: "The client did not answer, and no voicemail picked up. You may try again later.",
+  es: "El cliente no contestó y no se activó el buzón de voz. Puede intentarlo más tarde.",
+};
+
+const OUTBOUND_FAILED = {
+  en: "The call could not be started. Please try again later.",
+  es: "No se pudo iniciar la llamada. Inténtelo nuevamente más tarde.",
+};
+
+const CALLING_CLIENT = {
+  en: "Calling the client. Please wait.",
+  es: "Llamando al cliente. Por favor espere.",
+};
+
+function clientNoAnswer(lang) {
+  const twiml = new VoiceResponse();
+  twiml.say({ language: voiceLang(lang) }, CLIENT_NO_ANSWER[lang] || CLIENT_NO_ANSWER.en);
+  twiml.hangup();
+  return xml(twiml);
+}
+
+function outboundFailed(lang) {
+  const twiml = new VoiceResponse();
+  twiml.say({ language: voiceLang(lang) }, OUTBOUND_FAILED[lang] || OUTBOUND_FAILED.en);
+  twiml.hangup();
+  return xml(twiml);
+}
+
 function whisper(lang, dept) {
   const twiml = new VoiceResponse();
   const locale = voiceLang(lang);
@@ -237,22 +266,74 @@ function clientOutboundNotice(lang) {
   return xml(twiml);
 }
 
-function connectClient(lang, clientPhone) {
-  const twiml = new VoiceResponse();
-  const base = publicBaseUrl();
-  const recQs = new URLSearchParams({ client: clientPhone, direction: "outbound" });
-  const dial = twiml.dial({
-    timeout: 25,
-    answerOnBridge: true,
-    record: "record-from-answer-dual",
-    recordingStatusCallback: `${base}/voice/recording-complete?${recQs}`,
-    recordingStatusCallbackEvent: ["completed"],
-    action: `${base}/voice/dial-status?lang=${lang}`,
-    method: "POST",
-    callerId: process.env.TWILIO_PHONE_NUMBER,
+function outboundConferenceStatusUrl({ room, clientPhone, lang, operatorCallSid, clientCallSid }) {
+  const qs = new URLSearchParams({
+    room,
+    client: clientPhone,
+    lang,
+    operator: operatorCallSid,
+    clientCall: clientCallSid,
   });
-  const qs = new URLSearchParams({ lang });
-  dial.number({ url: `${base}/voice/outbound/client?${qs}` }, clientPhone);
+  return `${publicBaseUrl()}/voice/outbound/conference-status?${qs}`;
+}
+
+function joinOperatorConference({ room, clientPhone, lang, operatorCallSid, clientCallSid }) {
+  const twiml = new VoiceResponse();
+  const dial = twiml.dial();
+  const waitQs = new URLSearchParams({ lang });
+  dial.conference(
+    {
+      beep: false,
+      startConferenceOnEnter: false,
+      endConferenceOnExit: true,
+      maxParticipants: 2,
+      participantLabel: `operator-${operatorCallSid}`,
+      waitUrl: `${publicBaseUrl()}/voice/outbound/conference-wait?${waitQs}`,
+      waitMethod: "POST",
+      statusCallback: outboundConferenceStatusUrl({
+        room,
+        clientPhone,
+        lang,
+        operatorCallSid,
+        clientCallSid,
+      }),
+      statusCallbackMethod: "POST",
+      statusCallbackEvent: ["start", "join", "leave", "end"],
+    },
+    room,
+  );
+  return xml(twiml);
+}
+
+function joinClientConference({ room, clientPhone, lang, operatorCallSid, clientCallSid }) {
+  const twiml = new VoiceResponse();
+  const dial = twiml.dial();
+  dial.conference(
+    {
+      beep: false,
+      startConferenceOnEnter: true,
+      endConferenceOnExit: true,
+      maxParticipants: 2,
+      participantLabel: `client-${clientCallSid}`,
+      statusCallback: outboundConferenceStatusUrl({
+        room,
+        clientPhone,
+        lang,
+        operatorCallSid,
+        clientCallSid,
+      }),
+      statusCallbackMethod: "POST",
+      statusCallbackEvent: ["start", "join", "leave", "end"],
+    },
+    room,
+  );
+  return xml(twiml);
+}
+
+function outboundConferenceWait(lang) {
+  const twiml = new VoiceResponse();
+  twiml.say({ language: voiceLang(lang) }, CALLING_CLIENT[lang] || CALLING_CLIENT.en);
+  twiml.pause({ length: 60 });
   return xml(twiml);
 }
 
@@ -262,13 +343,17 @@ module.exports = {
   departmentMenu,
   connectDepartment,
   operatorBusy,
+  clientNoAnswer,
+  outboundFailed,
   whisper,
   empty,
   companyLanguageMenu,
   companyAskNumber,
   noNumberHangup,
   clientOutboundNotice,
-  connectClient,
+  joinOperatorConference,
+  joinClientConference,
+  outboundConferenceWait,
   afterHoursRecord,
   afterHoursThanks,
 };
