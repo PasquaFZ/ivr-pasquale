@@ -4,7 +4,7 @@
 
 La llamada saliente ahora usa una conferencia privada para que el operador:
 
-- escuche el saludo y el aviso de grabación al mismo tiempo que el cliente;
+- escuche el saludo al mismo tiempo que el cliente;
 - pueda reconocer de oído si atendió una persona o el buzón;
 - pueda dejar un mensaje después del tono del buzón;
 - reciba un aviso claro si no atendió ni una persona ni un buzón.
@@ -25,8 +25,8 @@ Se añadieron operaciones de Twilio para:
 - finalizar la pata del cliente si el operador abandona.
 
 La grabación sigue siendo una grabación dual de la llamada original del operador.
-Se inicia antes de crear la llamada al cliente, por lo que incluye la espera, el saludo,
-el aviso y la conversación o mensaje.
+Se inicia antes de crear la llamada al cliente, por lo que incluye la espera, el saludo
+y la conversación o mensaje.
 
 ### `src/modules/voice/service.js`
 
@@ -36,7 +36,7 @@ Se añadió la coordinación del flujo:
 2. Inicia la grabación con `client` y `direction=outbound` en el callback.
 3. Crea la llamada al cliente mediante la API de Twilio.
 4. Evita duplicar el inicio si Twilio reintenta el mismo webhook dentro del proceso.
-5. Cuando hay dos participantes, reproduce el saludo y el aviso en la sala.
+5. Cuando hay dos participantes, reproduce el saludo en la sala.
 6. Si la pata del cliente termina como `busy`, `failed`, `no-answer` o `canceled`,
    redirige al operador al aviso de no respuesta.
 7. Si el operador abandona, intenta terminar la pata del cliente.
@@ -48,7 +48,7 @@ Se añadieron respuestas TwiML para:
 - unir al operador a la conferencia en espera;
 - unir al cliente y arrancar la conferencia;
 - informar al operador mientras se llama;
-- reproducir saludo y aviso para ambos participantes;
+- reproducir el saludo para ambos participantes;
 - informar que nadie atendió;
 - informar si no fue posible iniciar la llamada.
 
@@ -61,7 +61,7 @@ El flujo saliente usa nuevos webhooks firmados:
 
 - `POST /voice/outbound/client`: une al cliente a la sala;
 - `POST /voice/outbound/conference-wait`: audio de espera del operador;
-- `POST /voice/outbound/conference-announcement`: saludo y aviso compartidos;
+- `POST /voice/outbound/conference-announcement`: saludo compartido;
 - `POST /voice/outbound/conference-status`: eventos de entrada, salida y fin;
 - `POST /voice/outbound/client-status`: resultado de la pata saliente;
 - `POST /voice/outbound/no-answer`: aviso final al operador.
@@ -83,7 +83,7 @@ Empresa llama al número Twilio
 
 Si persona o buzón atiende:
   -> cliente entra a la misma conferencia
-  -> Twilio reproduce saludo + aviso dentro de la conferencia
+  -> Twilio reproduce el saludo dentro de la conferencia
   -> ambos lo oyen
   -> operador oye a la persona o el saludo/tono del buzón
   -> habla con la persona o deja el mensaje
@@ -106,7 +106,8 @@ Si nadie atiende:
 - La validación `X-Twilio-Signature`.
 - La estructura de S3: `clients/{userId}/audios/outbound/{callSid}.mp3`.
 - El item de audio en DynamoDB y su visualización en el panel.
-- El saludo y el aviso legal existentes.
+- El saludo de salida existente.
+- El aviso de grabación de las llamadas entrantes.
 
 ## Aclaración sobre el inicio de la grabación
 
@@ -119,13 +120,14 @@ del cliente y antes de crear la pata saliente.
 
 Twilio no intenta clasificar si respondió una persona o una máquina:
 
-- si responde una persona, oye el saludo y aviso junto con el operador;
+- si responde una persona, oye el saludo junto con el operador;
 - si responde el buzón, el operador oye su locución y deja el mensaje después del tono;
 - si nadie ni ningún buzón responde dentro del tiempo permitido, se reproduce el aviso
   de no respuesta al operador.
 
-El saludo de Restoration A R y la locución del buzón pueden coincidir parcialmente. Es
-intencional: permite que el operador detecte el buzón mientras ambos oyen el aviso.
+El saludo corto de Restoration A R y la locución del buzón pueden coincidir
+parcialmente. El aviso largo de grabación se retiró únicamente de las llamadas
+salientes para reducir ese solapamiento.
 
 ## Configuración y despliegue
 
@@ -141,7 +143,7 @@ No es necesario habilitar Conference en el dashboard de Twilio. Antes de despleg
 
 ## Pruebas manuales recomendadas
 
-1. Persona atiende: ambos oyen saludo/aviso y luego conversan.
+1. Persona atiende: ambos oyen el saludo y luego conversan.
 2. Buzón atiende: operador oye la locución, espera el tono y deja mensaje.
 3. No respuesta: operador recibe el aviso correcto después del timeout.
 4. Ocupado o llamada rechazada: operador recibe el mismo aviso.

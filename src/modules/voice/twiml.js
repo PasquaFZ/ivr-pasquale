@@ -262,7 +262,6 @@ function clientOutboundNotice(lang) {
   const twiml = new VoiceResponse();
   const locale = voiceLang(lang);
   twiml.say({ language: locale }, OUTBOUND_HELLO[lang] || OUTBOUND_HELLO.en);
-  twiml.say({ language: locale }, NOTICE[lang] || NOTICE.en);
   return xml(twiml);
 }
 
