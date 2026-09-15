@@ -211,11 +211,6 @@ const NO_NUMBER = {
   es: "No se recibió ningún número.",
 };
 
-const OUTBOUND_HELLO = {
-  en: `Hello. This call is from ${COMPANY.en}.`,
-  es: `Hola. Esta llamada es de parte de ${COMPANY.es}.`,
-};
-
 function companyLanguageMenu() {
   const twiml = new VoiceResponse();
   const gather = twiml.gather({
@@ -258,11 +253,8 @@ function noNumberHangup(lang) {
   return xml(twiml);
 }
 
-function clientOutboundNotice(lang) {
-  const twiml = new VoiceResponse();
-  const locale = voiceLang(lang);
-  twiml.say({ language: locale }, OUTBOUND_HELLO[lang] || OUTBOUND_HELLO.en);
-  return xml(twiml);
+function clientOutboundNotice() {
+  return empty();
 }
 
 function outboundConferenceStatusUrl({ room, clientPhone, lang, operatorCallSid, clientCallSid }) {

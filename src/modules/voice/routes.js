@@ -151,7 +151,7 @@ router.post("/outbound/client", requireTwilio, (req, res) => {
 
   // Compatibilidad con un <Dial><Number> emitido antes de este despliegue.
   if (!ROOM_RE.test(room) || !CALL_SID_RE.test(operatorCallSid) || !CALL_SID_RE.test(clientCallSid) || !clientPhone) {
-    xml(res, twiml.clientOutboundNotice(lang));
+    xml(res, twiml.clientOutboundNotice());
     return;
   }
 
@@ -172,7 +172,7 @@ router.post("/outbound/conference-wait", requireTwilio, (req, res) => {
 });
 
 router.post("/outbound/conference-announcement", requireTwilio, (req, res) => {
-  xml(res, twiml.clientOutboundNotice(langFrom(req)));
+  xml(res, twiml.clientOutboundNotice());
 });
 
 router.post("/outbound/no-answer", requireTwilio, (req, res) => {

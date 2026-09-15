@@ -68,7 +68,7 @@ Pueden activarla **`COMPANY_PHONE`**, los teléfonos de departamento (`ES_*` / `
 2. Marca el número del cliente y **numeral** (`#`). 10 dígitos se toman como EE.UU. (`+1`).
 3. Si el cliente no existe, se crea. Si existe, el audio se le asigna a ese número.
 4. La empresa entra en una conferencia privada y Twilio llama al cliente durante un máximo de 40 segundos.
-5. Cuando el cliente o su buzón atiende, entra a la conferencia. El saludo de Restoration A R se reproduce para ambos participantes.
+5. Cuando el cliente o su buzón atiende, entra a la conferencia y ambos quedan conectados sin mensaje automático.
 6. El operador escucha a la persona o al buzón y puede dejar el mensaje después del tono. Si nadie atiende, oye un aviso y la llamada termina.
 7. La grabación dual empieza antes de marcar al cliente y se guarda en la ficha como audio `outbound`.
 
@@ -79,7 +79,7 @@ Empresa/depto → Twilio
   POST /voice/outbound/connect    inicia grabación + conferencia + llamada al cliente
   POST /voice/outbound/client     cliente entra a la conferencia
   POST /voice/outbound/conference-status
-  POST /voice/outbound/conference-announcement
+  POST /voice/outbound/conference-announcement   (compatibilidad; sin audio)
   POST /voice/outbound/client-status
   POST /voice/recording-complete?client=+1…   audio ligado al cliente
 ```
@@ -147,7 +147,7 @@ Los webhooks de voz validan `X-Twilio-Signature`. El admin usa `Authorization: B
 | `POST` | `/voice/outbound/connect` | número del cliente e inicio de conferencia |
 | `POST` | `/voice/outbound/client` | unir cliente a la conferencia |
 | `POST` | `/voice/outbound/conference-wait` | espera del operador |
-| `POST` | `/voice/outbound/conference-announcement` | saludo de salida para ambos |
+| `POST` | `/voice/outbound/conference-announcement` | compatibilidad; respuesta vacía |
 | `POST` | `/voice/outbound/conference-status` | eventos de participantes |
 | `POST` | `/voice/outbound/client-status` | resultado de la llamada al cliente |
 | `POST` | `/voice/outbound/no-answer` | aviso al operador si nadie atiende |

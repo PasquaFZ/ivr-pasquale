@@ -3,8 +3,6 @@ const { putAudioItem } = require("../audio/repository");
 const {
   startCallRecording,
   createOutboundCall,
-  announceConference,
-  countConferenceParticipants,
   redirectCall,
   endCall,
   fetchCallFrom,
@@ -13,7 +11,6 @@ const { downloadTwilioMp3, uploadCallAudio } = require("../../infra/storage");
 const { publicBaseUrl } = require("../../config");
 const { isOfficeOpen } = require("./officeHours");
 
-const announcedConferences = new Set();
 const outboundStarts = new Map();
 const OUTBOUND_FAILURE_STATUSES = new Set(["busy", "failed", "no-answer", "canceled"]);
 
@@ -103,25 +100,6 @@ async function startOutboundConference(args) {
   }
 }
 
-async function announceOutboundConference({ conferenceSid, lang }) {
-  if (!conferenceSid || announcedConferences.has(conferenceSid)) return false;
-  const participants = await countConferenceParticipants(conferenceSid);
-  if (participants < 2) return false;
-
-  announcedConferences.add(conferenceSid);
-  try {
-    const qs = new URLSearchParams({ lang });
-    await announceConference(
-      conferenceSid,
-      `${publicBaseUrl()}/voice/outbound/conference-announcement?${qs}`,
-    );
-    return true;
-  } catch (err) {
-    announcedConferences.delete(conferenceSid);
-    throw err;
-  }
-}
-
 async function handleOutboundClientStatus({ status, operatorCallSid, lang }) {
   if (!OUTBOUND_FAILURE_STATUSES.has(status) || !operatorCallSid) return;
   const qs = new URLSearchParams({ lang });
@@ -137,31 +115,20 @@ async function handleOutboundClientStatus({ status, operatorCallSid, lang }) {
 
 async function handleOutboundConferenceEvent({
   event,
-  conferenceSid,
   participantCallSid,
   operatorCallSid,
   clientCallSid,
-  lang,
 }) {
-  if (event === "participant-join") {
-    await announceOutboundConference({ conferenceSid, lang });
-    return;
-  }
-
-  if (event === "conference-end" || event === "participant-leave") {
-    if (event === "conference-end") announcedConferences.delete(conferenceSid);
-    if (
-      event === "participant-leave" &&
-      participantCallSid === operatorCallSid &&
-      clientCallSid
-    ) {
-      try {
-        await endCall(clientCallSid);
-      } catch (err) {
-        if (!callIsGone(err)) throw err;
-      }
+  if (
+    event === "participant-leave" &&
+    participantCallSid === operatorCallSid &&
+    clientCallSid
+  ) {
+    try {
+      await endCall(clientCallSid);
+    } catch (err) {
+      if (!callIsGone(err)) throw err;
     }
-    return;
   }
 }
 
